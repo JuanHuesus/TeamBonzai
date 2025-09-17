@@ -13,6 +13,7 @@ async function enableMocks() {
     const { worker } = await import("./mocks/browser");
     await worker.start({
       serviceWorker: { url: `${import.meta.env.BASE_URL}mockServiceWorker.js` },
+      onUnhandledRequest: "error", 
     });
   }
 }
