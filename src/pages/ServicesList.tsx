@@ -118,11 +118,8 @@ export default function ServicesList() {
   async function load() {
     setError(null);
     try {
-      const data = await listServices({
-        q: q || undefined,
-        category: category === "all" ? undefined : category,
-        type: type === "all" ? undefined : type,
-      });
+      // Haetaan kaikki ja suodatetaan aina klientsidella
+      const data = await listServices({});
       setItems(data);
     } catch (e: unknown) {
       setError(toMessage(e));
@@ -130,13 +127,7 @@ export default function ServicesList() {
   }
 
   // Ensimmäinen haku
-  useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
-  // Debounce q + reagoi category/type
-  useEffect(() => {
-    const t = setTimeout(() => { void load(); }, 250);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, category, type]);
+  useEffect(() => { void load(); }, []);
 
   // Dynaamiset arvot datasta (näytettävät kategoriat/tyypit)
   const categories = useMemo(() => {
@@ -159,15 +150,35 @@ export default function ServicesList() {
     setter(list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
   }
 
-  // Paikallinen suodatus (mode, dates, price, group, duration, facets)
+  // Paikallinen suodatus (nyt myös q/category/type)
   const locallyFiltered = useMemo(() => {
     if (!items) return null;
 
+    const qLower = q.trim().toLowerCase();
     const fromTs = dateFrom ? new Date(dateFrom + "T00:00:00Z").getTime() : null;
     const toTs = dateTo ? new Date(dateTo + "T23:59:59Z").getTime() : null;
     const maxPriceNum = maxPrice ? Number(maxPrice) : null;
 
     return items.filter((s) => {
+      // haku
+      if (qLower) {
+        const hay = [
+          s.name, s.description, s.service_provider,
+          s.listing_creator, s.service_category, s.service_type,
+        ].filter(Boolean).join(" ").toLowerCase();
+        if (!hay.includes(qLower)) return false;
+      }
+
+      // category
+      if (category !== "all" && (s.service_category ?? "").toLowerCase() !== category.toLowerCase()) {
+        return false;
+      }
+
+      // type
+      if (type !== "all" && (s.service_type ?? "").toLowerCase() !== type.toLowerCase()) {
+        return false;
+      }
+
       // mode
       const m: ModeFilter = isOnline(s.location) ? "online" : "inperson";
       if (mode !== "all" && m !== mode) return false;
@@ -186,13 +197,13 @@ export default function ServicesList() {
         if (p !== null && p > maxPriceNum) return false;
       }
 
-      // group size (attendee_limit)
+      // group size
       const g = groupLabel(s.attendee_limit);
       if (fGroupSize.length && !fGroupSize.includes(g)) return false;
 
-      // duration – ei kenttää datassa; jätetään true (tai voit parsia "90 min" descriptionista)
+      // duration – ei kenttää datassa; jätetään true
       if (fDuration.length) {
-        // demona: jos valittu mitä tahansa, ei rajata (pidetään UI tulevaa varten)
+        // placeholder tulevaa varten
       }
 
       // facets textistä
@@ -205,7 +216,7 @@ export default function ServicesList() {
 
       return true;
     });
-  }, [items, mode, dateFrom, dateTo, maxPrice, fGroupSize, fDuration, fCrafts, fCode, fInstr]);
+  }, [items, q, category, type, mode, dateFrom, dateTo, maxPrice, fGroupSize, fDuration, fCrafts, fCode, fInstr]);
 
   return (
     <main className="min-h-screen">
