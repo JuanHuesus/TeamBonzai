@@ -34,3 +34,7 @@ export async function updateService(id: string, payload: UpdateListedService): P
   const res = await http.put(`/listed_services/${id}`, payload);
   return res.data;
 }
+
+export async function deleteService(id: string): Promise<void> {
+  await http.delete(`/listed_services/${id}`);
+}
