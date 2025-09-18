@@ -30,7 +30,6 @@ jobs:
       - name: Install
         run: npm ci
 
-      # 🔑 Luo .env.production buildiä varten
       - name: Create .env.production for Pages
         run: |
           cat << 'EOF' > .env.production
