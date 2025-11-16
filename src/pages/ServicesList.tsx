@@ -225,7 +225,7 @@ export default function ServicesList() {
         <div className="grid md:grid-cols-2 gap-8 items-center">
           <div>
             <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight leading-tight">
-              Löydä kurssit, pajat ja oppitunnit Novista.
+              Löydä kurssit, pajat ja oppitunnit Novista!
             </h1>
             <p className="mt-3 text-neutral-600 max-w-prose">
               Hae nimen, opettajan tai kuvauksen perusteella. Suodata kategorian, tyypin, tilan, päivämäärän ja hinnan mukaan.
