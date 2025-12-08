@@ -1,11 +1,10 @@
 import { useState } from "react";
 
-/** Lähetettävä payload ylös (esim. tuleviin laajennuksiin) */
 type FilterPayload = {
-  type?: string;        // API: service_type
-  category?: string;    // API: service_category
-  priceMax?: number | null; // klientside
-  dateAfter?: string;   // klientside YYYY-MM-DD
+  type?: string;
+  category?: string;
+  priceMax?: number | null;
+  dateAfter?: string;
 };
 
 const SERVICE_TYPES = [
@@ -16,13 +15,12 @@ const SERVICE_TYPES = [
 ];
 
 const SERVICE_CATEGORIES = [
-  { key: "music", label: "Musiikki" },
-  { key: "pottery", label: "Keramiikka" },
-  { key: "fitness", label: "Liikunta" },
-  { key: "coding", label: "Koodaus" },
-  { key: "crafts", label: "Käsityöt" },
-  { key: "photo", label: "Valokuvaus" },
-  { key: "cooking", label: "Ruoanlaitto" },
+  { key: "cooking", label: "Ruoanlaitto (yleinen)" },
+  { key: "baking", label: "Leivonta" },
+  { key: "grilling", label: "Grillaus & BBQ" },
+  { key: "vegetarian", label: "Kasvis & vegaani" },
+  { key: "dessert", label: "Jälkiruoat" },
+  { key: "world", label: "Maailman keittiöt" },
 ];
 
 export default function FiltersBar({ onChange }: { onChange: (f: FilterPayload) => void }) {
@@ -44,17 +42,29 @@ export default function FiltersBar({ onChange }: { onChange: (f: FilterPayload) 
   return (
     <div className="border rounded-xl p-4 mb-6 space-y-3 bg-white shadow-sm">
       <div className="grid md:grid-cols-4 gap-3">
-        <select value={type} onChange={(e) => setType(e.target.value)} className="rounded-lg border p-2 text-sm">
+        <select
+          value={type}
+          onChange={(e) => setType(e.target.value)}
+          className="rounded-lg border p-2 text-sm"
+        >
           <option value="">— Tyyppi —</option>
           {SERVICE_TYPES.map((t) => (
-            <option key={t.key} value={t.key}>{t.label}</option>
+            <option key={t.key} value={t.key}>
+              {t.label}
+            </option>
           ))}
         </select>
 
-        <select value={category} onChange={(e) => setCategory(e.target.value)} className="rounded-lg border p-2 text-sm">
+        <select
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+          className="rounded-lg border p-2 text-sm"
+        >
           <option value="">— Kategoria —</option>
           {SERVICE_CATEGORIES.map((c) => (
-            <option key={c.key} value={c.key}>{c.label}</option>
+            <option key={c.key} value={c.key}>
+              {c.label}
+            </option>
           ))}
         </select>
 
@@ -63,7 +73,9 @@ export default function FiltersBar({ onChange }: { onChange: (f: FilterPayload) 
           placeholder="Max hinta (€)"
           className="rounded-lg border p-2 text-sm"
           value={priceMax ?? ""}
-          onChange={(e) => setPriceMax(e.target.value ? Number(e.target.value) : null)}
+          onChange={(e) =>
+            setPriceMax(e.target.value ? Number(e.target.value) : null)
+          }
         />
 
         <input
@@ -75,18 +87,31 @@ export default function FiltersBar({ onChange }: { onChange: (f: FilterPayload) 
       </div>
 
       <div className="flex items-center justify-end gap-2">
-        <button onClick={reset} className="rounded-xl px-3 py-1.5 border">Tyhjennä</button>
-        <button onClick={apply} className="rounded-xl px-3 py-1.5 border bg-black text-white">Hae</button>
+        <button onClick={reset} className="rounded-xl px-3 py-1.5 border">
+          Tyhjennä
+        </button>
+        <button
+          onClick={apply}
+          className="rounded-xl px-3 py-1.5 border bg-black text-white"
+        >
+          Hae
+        </button>
       </div>
 
-      {/* Lisäfiltterit varalla tulevaa varten */}
       <details className="mt-3">
-        <summary className="cursor-pointer text-sm text-neutral-600">Lisäfiltterit</summary>
+        <summary className="cursor-pointer text-sm text-neutral-600">
+          Lisäfiltterit
+        </summary>
         <div className="mt-2 text-sm space-y-2">
-          <p className="text-neutral-500">Tänne voidaan lisätä esim. taso, sijainti, kieli tai muita facetteja.</p>
+          <p className="text-neutral-500">
+            Tänne voidaan lisätä esim. taso, ruokavalio tai muita facetteja.
+          </p>
           <div className="flex flex-wrap gap-2">
             {SERVICE_CATEGORIES.map((c) => (
-              <span key={c.key} className="inline-flex rounded-full border px-2 py-1 text-xs">
+              <span
+                key={c.key}
+                className="inline-flex rounded-full border px-2 py-1 text-xs"
+              >
                 {c.label}
               </span>
             ))}

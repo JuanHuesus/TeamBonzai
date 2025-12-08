@@ -7,6 +7,12 @@ import ServicesList from "./pages/ServicesList";
 import ServiceEdit from "./pages/ServiceEdit";
 import Login from "./pages/Login";
 import { AuthProvider } from "./authContext";
+import { I18nProvider } from "./i18n";
+
+import Home from "./pages/Home";
+import Upcoming from "./pages/Upcoming";
+import Profile from "./pages/Profile";
+import Help from "./pages/Help";
 
 async function enableMocks() {
   if (import.meta.env.VITE_API_BASE_URL === "/mock") {
@@ -15,13 +21,11 @@ async function enableMocks() {
     await worker.start({
       serviceWorker: { url: `${import.meta.env.BASE_URL}mockServiceWorker.js` },
       onUnhandledRequest(req, print) {
-        // sallitaan assetit (kuvat, fontit, css/js) aina
         const assetDestinations = ["image", "font", "style", "script"];
         if (assetDestinations.includes(req.destination)) {
-          return; // hiljainen bypass
+          return;
         }
 
-        // sallitaan tietyt hostit esim paikkakuvat 
         try {
           const { host } = new URL(req.url);
           const allowHosts = new Set([
@@ -32,24 +36,21 @@ async function enableMocks() {
             "unpkg.com",
           ]);
           if (allowHosts.has(host)) {
-            return; // hiljanen bypass
+            return;
           }
         } catch {
-          // jos url parsaus ei onnistu, jatketaan tarkistuksia
+          // ignore
         }
 
-        // 3) sallitaan viten omat HMR-pyynnöt yms varmuuden vuoksi
         if (req.url.includes("@vite") || req.url.includes("sockjs-node")) {
           return;
         }
 
-        // kaikesta muusta näkyvä virhe, jottei api typoja lipsu verkkoon
         print.error();
       },
     });
   }
 }
-
 
 await enableMocks();
 
@@ -59,10 +60,14 @@ const router = createBrowserRouter(
       path: "/",
       element: <AppLayout />,
       children: [
-        { index: true, element: <ServicesList /> },
+        { index: true, element: <Home /> },
+        { path: "courses", element: <ServicesList /> },
+        { path: "upcoming", element: <Upcoming /> },
         { path: "edit/:id", element: <ServiceEdit /> },
         { path: "new", element: <ServiceEdit /> },
         { path: "login", element: <Login /> },
+        { path: "profile", element: <Profile /> },
+        { path: "help", element: <Help /> },
       ],
     },
   ],
@@ -73,8 +78,10 @@ const router = createBrowserRouter(
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <AuthProvider>
-      <RouterProvider router={router} />
-    </AuthProvider>
+    <I18nProvider>
+      <AuthProvider>
+        <RouterProvider router={router} />
+      </AuthProvider>
+    </I18nProvider>
   </React.StrictMode>
 );

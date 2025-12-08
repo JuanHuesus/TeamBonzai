@@ -11,6 +11,8 @@ import type { ListedService } from "../types";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import type { FormEvent } from "react";
 import { toMessage } from "../lib/error";
+import { useI18n } from "../i18n";
+
 
 /** Palauttaa true jos location on URL → tulkitaan etätilaksi */
 function isOnline(location: string | null | undefined) {
@@ -66,6 +68,8 @@ export default function ServiceEdit() {
   const { id } = useParams();
   const isNew = id === undefined;
   const nav = useNavigate();
+  const { t, lang } = useI18n();
+
 
   const [item, setItem] = useState<ListedService>(empty);
   const [datePart, setDatePart] = useState("");
@@ -104,11 +108,18 @@ export default function ServiceEdit() {
 
   // Pieniä johdettuja arvoja esikatseluun
   const dateText = useMemo(
-    () => (item.datetime ? new Date(item.datetime).toLocaleDateString("fi-FI") : "Aika ilmoitetaan"),
-    [item.datetime]
+    () =>
+      item.datetime
+        ? new Date(item.datetime).toLocaleDateString(
+            lang === "fi" ? "fi-FI" : "en-GB"
+          )
+        : t("course.timeTBA"),
+    [item.datetime, lang, t]
   );
-  const modeText = isOnline(item.location) ? "Etä" : "Lähikurssi";
-  const priceText = item.price?.trim() ? item.price : "Ilmainen";
+const modeText = isOnline(item.location)
+    ? t("course.mode.online")
+    : t("course.mode.inperson");
+  const priceText = item.price?.trim() ? item.price : t("course.free");
   const img = item.image || "https://placehold.co/1600x900?text=Kuva";
 
   const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
@@ -314,7 +325,7 @@ export default function ServiceEdit() {
                 className="w-full rounded-xl border px-3 py-2 text-sm"
                 value={item.service_category}
                 onChange={(e) => setItem({ ...item, service_category: e.target.value })}
-                placeholder='Esim. "music", "pottery", "coding"…'
+                placeholder='Esim. "cooking", "baking", "vegetarian"…'
               />
             </div>
             <div className="md:col-span-2">
