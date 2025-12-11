@@ -56,6 +56,11 @@
     @apply max-w-xl;
   }
 
+  /* UUTTA: badge hero-tekstin yläpuolelle */
+  .home-hero-badge {
+    @apply mb-3;
+  }
+
   .home-hero-title {
     @apply text-3xl md:text-4xl font-extrabold leading-tight text-slate-900 mb-3;
   }
@@ -66,6 +71,23 @@
 
   .home-hero-actions {
     @apply flex flex-wrap gap-3;
+  }
+
+  /* UUTTA: hero-statit – eroaa kurssilistauksesta */
+  .home-hero-stats {
+    @apply mt-6 grid grid-cols-3 gap-3 text-xs;
+  }
+
+  .home-hero-stat-item {
+    @apply rounded-2xl border border-orange-100 bg-white/70 px-3 py-2 flex flex-col;
+  }
+
+  .home-hero-stat-number {
+    @apply text-lg font-semibold text-emerald-700 leading-none mb-1;
+  }
+
+  .home-hero-stat-label {
+    @apply text-[0.7rem] text-slate-500;
   }
 
   /* Tulevat tapahtumat -kortti */
@@ -128,23 +150,65 @@
     @apply text-[0.7rem] text-slate-400;
   }
 
-  /* Kurssilista */
+  /* Kurssinostot etusivulla – eri kortti kuin yleinen ServiceCard */
+
   .home-courses-section {
     @apply mt-10;
   }
 
   .home-courses-header {
-    @apply flex items-center justify-between border-b border-orange-100 pb-2 mb-4;
+    @apply flex flex-col gap-2 md:flex-row md:items-end md:justify-between border-b border-orange-100 pb-3 mb-4;
   }
 
   .home-courses-title {
     @apply text-xl font-semibold text-slate-900;
   }
 
+  .home-courses-subtitle {
+    @apply text-xs md:text-sm text-slate-600 max-w-md;
+  }
+
   .error-banner {
     @apply mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800;
   }
 
+  .home-courses-grid {
+    @apply grid gap-5 sm:grid-cols-2 xl:grid-cols-3;
+  }
+
+  .home-course-card {
+    @apply surface-card flex flex-col overflow-hidden cursor-pointer transition hover:-translate-y-0.5 hover:shadow-md;
+  }
+
+  .home-course-image-wrapper {
+    @apply relative h-40 overflow-hidden;
+  }
+
+  .home-course-image {
+    @apply w-full h-full object-cover;
+  }
+
+  .home-course-content {
+    @apply px-3 py-3 flex flex-col gap-1;
+  }
+
+  .home-course-date {
+    @apply text-[0.7rem] text-slate-500;
+  }
+
+  .home-course-title {
+    @apply text-sm font-semibold text-slate-900 line-clamp-2;
+  }
+
+  .home-course-provider {
+    @apply text-xs text-slate-600;
+  }
+
+  .home-course-meta {
+    @apply text-[0.7rem] text-slate-400;
+  }
+
+  /* yleinen kurssigrid (listaus-sivu käyttää tätä ServiceCardille) */
   .courses-grid {
     @apply grid gap-6 sm:grid-cols-2 lg:grid-cols-3;
   }

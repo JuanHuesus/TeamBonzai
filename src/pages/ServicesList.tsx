@@ -8,7 +8,6 @@ import { toMessage } from "../lib/error";
 import { useI18n } from "../i18n";
 import ServiceDetailModal from "../features/services/ServiceDetailModal";
 
-
 function isOnline(location: string | null | undefined) {
   if (!location) return false;
   try {
@@ -284,7 +283,7 @@ export default function ServicesList() {
   ]);
 
   return (
-    <main className="min-h-screen">
+    <main className="min-h-screen bg-white/90">
       {/* Hero */}
       <section className="page-shell py-8 md:py-14">
         <div className="grid md:grid-cols-2 gap-8 items-center">
@@ -470,6 +469,8 @@ export default function ServicesList() {
         onClose={() => setFiltersOpen(false)}
         title="Lisäsuodattimet"
       >
+        {/* ... loppu modal-koodi täsmälleen kuten aiemmin ... */}
+        {/* Jätetään sisältö ennalleen (kopioitu aiemmasta) */}
         <div className="grid md:grid-cols-3 gap-4">
           {/* Päivämäärä */}
           <div className="border rounded-xl p-3">
@@ -656,8 +657,7 @@ export default function ServicesList() {
       </Modal>
 
       {/* Detail-modal yhteiskomponentilla */}
-      
-        {detail && (
+      {detail && (
         <ServiceDetailModal
           service={detail}
           onClose={() => setDetail(null)}

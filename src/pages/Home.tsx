@@ -1,8 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { listServices } from "../features/services/api.services";
 import type { ListedService } from "../types";
-import ServiceCard from "../features/services/ServiceCard";
 import ServiceDetailModal from "../features/services/ServiceDetailModal";
 import { useI18n } from "../i18n";
 import { toMessage } from "../lib/error";
@@ -48,12 +47,30 @@ export default function Home() {
 
   const locale = lang === "fi" ? "fi-FI" : "en-GB";
 
+  // Etusivun "nostot": max 6 kurssia omalla korttityylillä
+  const featuredCourses = useMemo(
+    () => allCourses.slice(0, 6),
+    [allCourses]
+  );
+
+  // Yksinkertaiset statit hero-alueelle
+  const providerCount = useMemo(() => {
+    const set = new Set(
+      allCourses
+        .map((s) => s.service_provider)
+        .filter((x): x is string => !!x)
+    );
+    return set.size;
+  }, [allCourses]);
+
   return (
     <main className="home-main">
       {/* HERO + tulevat tapahtumat */}
       <section className="home-hero-layout">
-        {/* Hero-teksti */}
+        {/* Hero-teksti + statit */}
         <div className="home-hero-text">
+          {/* poistettu badge */}
+
           <h1 className="home-hero-title">{t("hero.title")}</h1>
           <p className="home-hero-subtitle">{t("hero.subtitle")}</p>
 
@@ -64,6 +81,34 @@ export default function Home() {
             <Link to="/upcoming" className="btn-secondary">
               {t("nav.upcoming")}
             </Link>
+          </div>
+
+          {/* Pienet statit tekevät etusivusta erilaisen kuin listaus */}
+          <div className="home-hero-stats">
+            <div className="home-hero-stat-item">
+              <div className="home-hero-stat-number">
+                {allCourses.length}
+              </div>
+              <div className="home-hero-stat-label">
+                {t("home.statCourses")}
+              </div>
+            </div>
+            <div className="home-hero-stat-item">
+              <div className="home-hero-stat-number">
+                {upcoming.length}
+              </div>
+              <div className="home-hero-stat-label">
+                {t("home.statUpcoming")}
+              </div>
+            </div>
+            <div className="home-hero-stat-item">
+              <div className="home-hero-stat-number">
+                {providerCount}
+              </div>
+              <div className="home-hero-stat-label">
+                {t("home.statProviders")}
+              </div>
+            </div>
           </div>
         </div>
 
@@ -140,12 +185,20 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Kurssilista */}
+      {/* Kurssinostot – eri tyyli kuin varsinainen kurssilistaus */}
       <section className="home-courses-section">
         <div className="home-courses-header">
-          <h2 className="home-courses-title">
-            {t("home.popularTitle")}
-          </h2>
+          <div>
+            <h2 className="home-courses-title">
+              {t("home.popularTitle")}
+            </h2>
+            <p className="home-courses-subtitle">
+              {t("home.popularSubtitle")}
+            </p>
+          </div>
+          <Link to="/courses" className="btn-secondary">
+            {t("home.viewAllCourses")}
+          </Link>
         </div>
 
         {error && <div className="error-banner">{error}</div>}
@@ -156,14 +209,59 @@ export default function Home() {
           </div>
         )}
 
-        <div className="courses-grid">
-          {allCourses.map((s) => (
-            <ServiceCard key={s.id} s={s} onOpen={setDetail} />
+        <div className="home-courses-grid">
+          {featuredCourses.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              className="home-course-card"
+              onClick={() => setDetail(s)}
+            >
+              <div className="home-course-image-wrapper">
+                <img
+                  src={
+                    s.image ||
+                    "https://placehold.co/800x450?text=Kuva"
+                  }
+                  alt=""
+                  className="home-course-image"
+                  onError={(e) => {
+                    e.currentTarget.src =
+                      "https://placehold.co/800x450?text=Kuva";
+                  }}
+                />
+              </div>
+              <div className="home-course-content">
+                <div className="home-course-date">
+                  {s.datetime
+                    ? new Date(s.datetime).toLocaleDateString(locale)
+                    : t("course.timeTBA")}
+                </div>
+                <div className="home-course-title">{s.name}</div>
+                <div className="home-course-provider">
+                  {s.service_provider}
+                </div>
+                {s.location && (
+                  <div className="home-course-meta">
+                    {s.location}
+                  </div>
+                )}
+              </div>
+            </button>
           ))}
+
+          {featuredCourses.length === 0 && items && (
+            <div className="upcoming-card-date">
+              {t("services.noPreview")}
+            </div>
+          )}
         </div>
       </section>
 
-      <ServiceDetailModal service={detail} onClose={() => setDetail(null)} />
+      <ServiceDetailModal
+        service={detail}
+        onClose={() => setDetail(null)}
+      />
     </main>
   );
 }

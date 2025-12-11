@@ -29,10 +29,16 @@ const translations: Record<Lang, Record<string, string>> = {
     "hero.subtitle":
       "Selaa kokkauskursseja, työpajoja ja makumatkoja. Suodata aiheen, tason, hinnan ja toteutustyylin mukaan.",
 
-    "home.popularTitle": "Kaikki kurssit",
+    "home.popularTitle": "Kurssit esittelyssä",
     "home.upcomingTitle": "Tulevat tapahtumat",
     "home.viewAllCourses": "Näytä kaikki kurssit",
     "home.upcomingCountShort": "tulossa",
+    "home.statCourses": "Kurssia yhteensä",
+    "home.statUpcoming": "Tulossa",
+    "home.statProviders": "Järjestäjää",
+
+    "home.popularSubtitle": "Nostoja ChefUPin valikoimasta – kurkkaa muutama esimerkki.",
+
     
 
     "button.newListing": "Uusi kurssi",
@@ -188,10 +194,15 @@ const translations: Record<Lang, Record<string, string>> = {
     "hero.subtitle":
       "Browse cooking classes, workshops and tastings. Filter by topic, level, price and format.",
 
-    "home.popularTitle": "All courses",
+    "home.popularTitle": "Course offerings",
     "home.upcomingTitle": "Upcoming events",
     "home.viewAllCourses": "View all courses",
     "home.upcomingCountShort": "upcoming",
+    "home.statCourses": "Total courses",
+    "home.statUpcoming": "Upcoming",
+    "home.statProviders": "Providers",
+
+    "home.popularSubtitle": "Featured courses from ChefUP – here are a few examples.",
 
     "button.newListing": "New course",
 
