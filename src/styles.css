@@ -15,7 +15,7 @@
   }
 }
 
-/* yksinkertaiset apuluokat, joilla saa yhtenäisen lookin */
+/* komponenttitaso – yleiset apuluokat ja home-sivun layout */
 @layer components {
   /* keskittää sisällön max leveydelle */
   .page-shell {
@@ -40,5 +40,122 @@
   /* pieni korostebadge esim. hero-tekstin yläpuolelle */
   .pill-badge {
     @apply inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-800;
+  }
+
+  /* ====== HOME PAGE ====== */
+
+  .home-main {
+    @apply page-shell pt-10 pb-16;
+  }
+
+  .home-hero-layout {
+    @apply grid gap-10 items-start lg:grid-cols-2;
+  }
+
+  .home-hero-text {
+    @apply max-w-xl;
+  }
+
+  .home-hero-title {
+    @apply text-3xl md:text-4xl font-extrabold leading-tight text-slate-900 mb-3;
+  }
+
+  .home-hero-subtitle {
+    @apply text-sm md:text-base text-slate-600 leading-relaxed mb-5;
+  }
+
+  .home-hero-actions {
+    @apply flex flex-wrap gap-3;
+  }
+
+  /* Tulevat tapahtumat -kortti */
+  .home-upcoming-card {
+    @apply surface-card overflow-hidden;
+  }
+
+  .home-upcoming-header {
+    @apply flex items-center justify-between px-3 py-2 border-b border-orange-100 bg-amber-50/80;
+  }
+
+  .home-upcoming-title {
+    @apply text-xs font-semibold text-slate-900;
+  }
+
+  .home-upcoming-count {
+    @apply inline-flex items-baseline gap-1 text-[0.7rem] text-slate-500;
+  }
+
+  .home-upcoming-count-number {
+    @apply font-semibold text-amber-700;
+  }
+
+  .upcoming-marquee {
+    @apply overflow-hidden px-3 pb-3 pt-2;
+  }
+
+  .upcoming-marquee-track {
+    @apply inline-flex gap-3;
+    animation: upcoming-marquee 40s linear infinite;
+    will-change: transform;
+  }
+
+  .upcoming-marquee-track.is-paused {
+    animation-play-state: paused;
+  }
+
+  .upcoming-card {
+    @apply min-w-[190px] max-w-[230px] rounded-2xl border border-orange-100 bg-white/95 overflow-hidden
+      text-left cursor-pointer transition transform hover:-translate-y-0.5 hover:shadow-md hover:border-orange-200;
+  }
+
+  .upcoming-card img {
+    @apply block w-full h-24 object-cover;
+  }
+
+  .upcoming-card-body {
+    @apply px-2.5 pt-1.5 pb-2;
+  }
+
+  .upcoming-card-date {
+    @apply text-[0.7rem] text-slate-500 mb-0.5;
+  }
+
+  .upcoming-card-title {
+    @apply text-xs font-semibold text-slate-900 mb-0.5 line-clamp-2;
+  }
+
+  .upcoming-card-provider {
+    @apply text-[0.7rem] text-slate-400;
+  }
+
+  /* Kurssilista */
+  .home-courses-section {
+    @apply mt-10;
+  }
+
+  .home-courses-header {
+    @apply flex items-center justify-between border-b border-orange-100 pb-2 mb-4;
+  }
+
+  .home-courses-title {
+    @apply text-xl font-semibold text-slate-900;
+  }
+
+  .error-banner {
+    @apply mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800;
+  }
+
+  .courses-grid {
+    @apply grid gap-6 sm:grid-cols-2 lg:grid-cols-3;
+  }
+}
+
+/* marquee-animaatio */
+@keyframes upcoming-marquee {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
   }
 }

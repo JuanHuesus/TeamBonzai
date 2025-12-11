@@ -23,6 +23,7 @@ const translations: Record<Lang, Record<string, string>> = {
     "nav.moderation": "Moderointi",
     "nav.register": "Luo käyttäjä",
 
+
     // Hero / etusivu
     "hero.title": "Löydä ruoka- ja kokkauskurssit ChefUPista!",
     "hero.subtitle":
@@ -31,6 +32,8 @@ const translations: Record<Lang, Record<string, string>> = {
     "home.popularTitle": "Kaikki kurssit",
     "home.upcomingTitle": "Tulevat tapahtumat",
     "home.viewAllCourses": "Näytä kaikki kurssit",
+    "home.upcomingCountShort": "tulossa",
+    
 
     "button.newListing": "Uusi kurssi",
 
@@ -188,6 +191,7 @@ const translations: Record<Lang, Record<string, string>> = {
     "home.popularTitle": "All courses",
     "home.upcomingTitle": "Upcoming events",
     "home.viewAllCourses": "View all courses",
+    "home.upcomingCountShort": "upcoming",
 
     "button.newListing": "New course",
 
