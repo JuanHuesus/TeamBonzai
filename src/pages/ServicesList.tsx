@@ -286,7 +286,7 @@ export default function ServicesList() {
   return (
     <main className="min-h-screen">
       {/* Hero */}
-      <section className="mx-auto max-w-7xl px-4 py-8 md:py-14">
+      <section className="page-shell py-8 md:py-14">
         <div className="grid md:grid-cols-2 gap-8 items-center">
           <div>
             <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight leading-tight">
@@ -436,7 +436,7 @@ export default function ServicesList() {
       </section>
 
       {/* Tulokset */}
-      <section className="mx-auto max-w-7xl px-4 pb-16">
+      <section className="page-shell pb-16">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl md:text-2xl font-bold">
             {t("services.resultsTitle")} (

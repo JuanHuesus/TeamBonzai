@@ -39,7 +39,7 @@ export default function Upcoming() {
       );
 
   return (
-    <main className="mx-auto max-w-7xl px-4 py-8 md:py-12">
+    <main className="page-shell py-8 md:py-12">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl md:text-3xl font-bold">

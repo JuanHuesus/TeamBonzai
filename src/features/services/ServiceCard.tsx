@@ -2,6 +2,7 @@ import type { ListedService } from "../../types";
 import Tag from "../../ui/Tag";
 import { useI18n } from "../../i18n";
 
+// jos lokaatio näykyy URL:inä, tulkitaan se online-kurssiksi
 function isOnline(location: string | null | undefined) {
   if (!location) return false;
   try {
@@ -20,6 +21,8 @@ export default function ServiceCard({
   onOpen: (svc: ListedService) => void;
 }) {
   const { t, lang } = useI18n();
+
+  // derivoidataan kurssin tyyppi sijainnin perusteella
   const mode = isOnline(s.location) ? "online" : "inperson";
   const locale = lang === "fi" ? "fi-FI" : "en-GB";
   const priceText = s.price?.trim() ? s.price : t("course.free");
@@ -28,6 +31,7 @@ export default function ServiceCard({
     : t("course.timeTBA");
   const img = s.image || "https://placehold.co/1600x900?text=Kuva";
 
+  // yksittäisen palvelukortin renderöinti
   return (
     <div className="group rounded-2xl overflow-hidden border bg-white shadow-sm hover:shadow-md transition">
       <div className="aspect-[16/9] overflow-hidden">
@@ -53,11 +57,11 @@ export default function ServiceCard({
           </Tag>
         </div>
         <div className="text-sm text-neutral-600 flex flex-wrap gap-2">
-          <span> {s.service_provider}</span>
+          <span>{s.service_provider}</span>
           <span>•</span>
-          <span> {dateText}</span>
+          <span>{dateText}</span>
           <span>•</span>
-          <span> {s.service_category}</span>
+          <span>{s.service_category}</span>
         </div>
         <div className="flex items-center justify-between">
           <div className="font-semibold">{priceText}</div>
