@@ -1,18 +1,23 @@
+// src/main.tsx
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import "./styles.css";
+
 import AppLayout from "./App";
 import ServicesList from "./pages/ServicesList";
 import ServiceEdit from "./pages/ServiceEdit";
 import Login from "./pages/Login";
-import { AuthProvider } from "./authContext";
-import { I18nProvider } from "./i18n";
 
 import Home from "./pages/Home";
 import Upcoming from "./pages/Upcoming";
 import Profile from "./pages/Profile";
 import Help from "./pages/Help";
+import Moderation from "./pages/Moderation"; // <- moderaattorin näkymä
+import Register from "./pages/Register";
+
+import { AuthProvider } from "./authContext";
+import { I18nProvider } from "./i18n";
 
 async function enableMocks() {
   if (import.meta.env.VITE_API_BASE_URL === "/mock") {
@@ -60,14 +65,31 @@ const router = createBrowserRouter(
       path: "/",
       element: <AppLayout />,
       children: [
+        // Etusivu: suosituimmat + ruoka-teema + kaikki kurssit
         { index: true, element: <Home /> },
+
+        // Kaikki kurssit
         { path: "courses", element: <ServicesList /> },
+
+        // Tulevat tapahtumat omalla välilehdellä
         { path: "upcoming", element: <Upcoming /> },
+
+        // Kurssin luonti / muokkaus
         { path: "edit/:id", element: <ServiceEdit /> },
         { path: "new", element: <ServiceEdit /> },
+
+        // Auth
         { path: "login", element: <Login /> },
+        { path: "register", element: <Register /> },
+
+        // Käyttäjäprofiili (MVP + omat raportit)
         { path: "profile", element: <Profile /> },
+
+        // Apu / FAQ / käyttöehdot
         { path: "help", element: <Help /> },
+
+        // Moderaattorien raporttinäkymä
+        { path: "moderation", element: <Moderation /> },
       ],
     },
   ],

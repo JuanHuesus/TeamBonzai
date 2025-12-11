@@ -53,11 +53,11 @@ export default function ServiceCard({
           </Tag>
         </div>
         <div className="text-sm text-neutral-600 flex flex-wrap gap-2">
-          <span>👤 {s.service_provider}</span>
+          <span> {s.service_provider}</span>
           <span>•</span>
-          <span>🗓 {dateText}</span>
+          <span> {dateText}</span>
           <span>•</span>
-          <span>🏷 {s.service_category}</span>
+          <span> {s.service_category}</span>
         </div>
         <div className="flex items-center justify-between">
           <div className="font-semibold">{priceText}</div>

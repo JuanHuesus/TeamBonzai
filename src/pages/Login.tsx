@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useAuth } from "../useAuth";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { toMessage } from "../lib/error";
 import { useI18n } from "../i18n";
 
@@ -67,6 +67,13 @@ export default function Login() {
           {loading ? t("login.submitting") : t("login.submit")}
         </button>
       </form>
+
+      <p className="mt-3 text-xs text-neutral-600">
+        {t("login.noAccount")}{" "}
+        <Link to="/register" className="underline">
+          {t("login.goToRegister")}
+        </Link>
+      </p>
     </main>
   );
 }

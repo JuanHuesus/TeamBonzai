@@ -39,8 +39,9 @@ export default function Home() {
           new Date(a.datetime!).getTime() - new Date(b.datetime!).getTime()
       );
 
-  // Heuristiikka: "suosituimmat" = ensimmäiset tulevat (voi vaihtaa myöhemmin backend-dataan)
-  const popular = upcoming.slice(0, 3);
+  // Näytetään kaikki kurssit “Suosituimmat”-osiossa (yksinkertaisesti kaikki listatut)
+  const allCourses = (items ?? []).slice();
+
   const locale = lang === "fi" ? "fi-FI" : "en-GB";
 
   return (
@@ -111,7 +112,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Suosituimmat */}
+      {/* Kaikki kurssit */}
       <section className="mb-10">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl md:text-2xl font-bold">
@@ -125,13 +126,13 @@ export default function Home() {
         )}
         {!items && <div>{t("services.loading")}</div>}
         <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-6">
-          {popular.map((s) => (
+          {allCourses.map((s) => (
             <ServiceCard key={s.id} s={s} onOpen={setDetail} />
           ))}
         </div>
       </section>
 
-      {/* Tulevat nostot */}
+      {/* Tulevat nostot (pidetään erillisenä nostona) */}
       <section className="mb-10">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl md:text-2xl font-bold">
@@ -148,10 +149,7 @@ export default function Home() {
         </div>
       </section>
 
-      <ServiceDetailModal
-        service={detail}
-        onClose={() => setDetail(null)}
-      />
+      <ServiceDetailModal service={detail} onClose={() => setDetail(null)} />
     </main>
   );
 }

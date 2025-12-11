@@ -1,36 +1,135 @@
+/* eslint-disable react-refresh/only-export-components */
 import { createContext, useEffect, useState } from "react";
 import { api } from "./api";
-import type { LoginResponse } from "./types";
+import type { AuthResponse, UserProfile } from "./types";
 
 type AuthCtx = {
   token: string | null;
   email: string | null;
-  login: (email: string, password: string) => Promise<void>;
+  role: string | null;
+  login: (email: string, hashed_password: string) => Promise<void>;
+  register: (payload: {
+    firstname: string;
+    surname: string;
+    email: string;
+    hashed_password: string;
+    phone_number?: string;
+    description?: string;
+    profile_image?: string;
+  }) => Promise<void>;
   logout: () => void;
 };
 
 export const AuthContext = createContext<AuthCtx | null>(null);
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [token, setToken] = useState<string | null>(localStorage.getItem("token"));
-  const [email, setEmail] = useState<string | null>(localStorage.getItem("email"));
+async function fetchUserProfile(
+  id: string,
+  token: string
+): Promise<UserProfile | null> {
+  try {
+    const { data } = await api.get<UserProfile>(`/users/${id}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    return data;
+  } catch (err) {
+    console.error("Failed to fetch user profile", err);
+    return null;
+  }
+}
 
-  const login = async (emailIn: string, password: string) => {
-    const { data } = await api.post<LoginResponse>("/users/login", { email: emailIn, password });
-    setToken(data.token);
-    setEmail(data.email);
-    localStorage.setItem("token", data.token);
-    localStorage.setItem("email", data.email);
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [token, setToken] = useState<string | null>(
+    localStorage.getItem("token")
+  );
+  const [email, setEmail] = useState<string | null>(
+    localStorage.getItem("email")
+  );
+  const [role, setRole] = useState<string | null>(
+    localStorage.getItem("role")
+  );
+
+  const applyAuth = async (
+    auth: AuthResponse,
+    emailFallback?: string
+  ): Promise<void> => {
+    const jwt = auth.userToken;
+
+    // tallenna token ensin, jotta profiilikutsu saa sen headeriin
+    localStorage.setItem("token", jwt);
+    setToken(jwt);
+
+    const profile = await fetchUserProfile(auth.id, jwt);
+
+    const finalEmail = profile?.email ?? emailFallback ?? null;
+    const finalRole = profile?.user_role ?? null;
+
+    setEmail(finalEmail);
+    setRole(finalRole);
+
+    if (finalEmail) {
+      localStorage.setItem("email", finalEmail);
+    } else {
+      localStorage.removeItem("email");
+    }
+
+    if (finalRole) {
+      localStorage.setItem("role", finalRole);
+    } else {
+      localStorage.removeItem("role");
+    }
+  };
+
+  const login = async (emailIn: string, hashed_password: string) => {
+    const { data } = await api.post<AuthResponse>("/users/login", {
+      email: emailIn,
+      // BACKEND odottaa kenttää nimeltä "hashed_password",
+      // vaikka siellä on selkokielinen salasana.
+      hashed_password: hashed_password,
+    });
+
+    await applyAuth(data, emailIn);
+  };
+
+  const register: AuthCtx["register"] = async ({
+    firstname,
+    surname,
+    email: emailIn,
+    hashed_password,
+    phone_number,
+    description,
+    profile_image,
+  }) => {
+    const { data } = await api.post<AuthResponse>("/users/signup", {
+      firstname,
+      surname,
+      email: emailIn,
+      phone_number,
+      description,
+      hashed_password: hashed_password,
+      profile_image,
+    });
+
+    await applyAuth(data, emailIn);
   };
 
   const logout = () => {
     setToken(null);
     setEmail(null);
+    setRole(null);
     localStorage.removeItem("token");
     localStorage.removeItem("email");
+    localStorage.removeItem("role");
   };
 
-  useEffect(() => {}, [token]);
+  useEffect(() => {
+    // ei tarvi tehdä mitään – tila synkassa localStoragen kanssa
+  }, [token, role]);
 
-  return <AuthContext.Provider value={{ token, email, login, logout }}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={{ token, email, role, login, register, logout }}>
+      {children}
+    </AuthContext.Provider>
+  );
 }

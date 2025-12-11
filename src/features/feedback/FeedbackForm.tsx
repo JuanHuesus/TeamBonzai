@@ -1,36 +1,107 @@
+// src/features/feedback/FeedbackForm.tsx
 import { useState, type FormEvent } from "react";
 import { useI18n } from "../../i18n";
+import { useAuth } from "../../useAuth";
+import { toMessage } from "../../lib/error";
+import {
+  postListingRating,
+  postUserRating,
+} from "../ratings/api.ratings";
 
-type Props = {
-  serviceName: string;
+type ListingTarget = {
+  kind: "listing";
+  listingId: string;
+  listingName: string;
 };
 
-export default function FeedbackForm({ serviceName }: Props) {
-  const { t } = useI18n();
-  const [rating, setRating] = useState<string>("");
-  const [comment, setComment] = useState<string>("");
-  const [submitted, setSubmitted] = useState(false);
+type UserTarget = {
+  kind: "user";
+  userId: string;
+  userName?: string;
+};
 
-  const onSubmit = (e: FormEvent<HTMLFormElement>) => {
+type Props = {
+  target: ListingTarget | UserTarget;
+  onSubmitted?: () => void;
+};
+
+/**
+ * Yhteinen feedback-lomake sekä kurssille että kurssin vetäjälle.
+ * Backend hoitaa tallennuksen listing_rating_entries / user_rating_entries -tauluihin.
+ */
+export default function FeedbackForm({ target, onSubmitted }: Props) {
+  const { t } = useI18n();
+  const { token } = useAuth();
+  const [stars, setStars] = useState<string>("");
+  const [comment, setComment] = useState<string>("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  const title =
+    target.kind === "listing"
+      ? t("feedback.forCourse", { name: target.listingName })
+      : t("feedback.forOrganizer", { name: target.userName ?? "" });
+
+  const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    // Demo: ei vielä lähetetä backendille
-    console.log("Feedback (demo only)", { serviceName, rating, comment });
-    setSubmitted(true);
-    setRating("");
-    setComment("");
-    setTimeout(() => setSubmitted(false), 3000);
+    setError(null);
+    setDone(false);
+
+    const n = Number(stars);
+    if (!Number.isFinite(n) || n < 1 || n > 5) {
+      setError(t("feedback.errorStars"));
+      return;
+    }
+
+    if (!token) {
+      setError(t("feedback.errorLoginRequired"));
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      if (target.kind === "listing") {
+        await postListingRating(target.listingId, {
+          stars: n,
+          feedback: comment.trim() || undefined,
+          public: true,
+        });
+      } else {
+        await postUserRating(target.userId, {
+          stars: n,
+          feedback: comment.trim() || undefined,
+          public: true,
+        });
+      }
+      setDone(true);
+      setStars("");
+      setComment("");
+      if (onSubmitted) onSubmitted();
+    } catch (e: unknown) {
+      setError(toMessage(e));
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
     <form onSubmit={onSubmit} className="space-y-2">
-      <div className="font-semibold text-sm">{t("feedback.title")}</div>
+      <div className="font-semibold text-sm">{title}</div>
+
+      {!token && (
+        <div className="text-xs text-neutral-500">
+          {t("feedback.loginHint")}
+        </div>
+      )}
+
       <div className="grid md:grid-cols-3 gap-2 text-sm">
         <label className="flex flex-col gap-1">
           <span>{t("feedback.ratingLabel")}</span>
           <select
             className="rounded-xl border px-3 py-2 text-sm"
-            value={rating}
-            onChange={(e) => setRating(e.target.value)}
+            value={stars}
+            onChange={(e) => setStars(e.target.value)}
           >
             <option value="">-</option>
             {[1, 2, 3, 4, 5].map((n) => (
@@ -52,14 +123,22 @@ export default function FeedbackForm({ serviceName }: Props) {
           </label>
         </div>
       </div>
+
+      {error && (
+        <div className="text-xs text-red-600">
+          {error}
+        </div>
+      )}
+
       <div className="flex items-center gap-2">
         <button
           type="submit"
-          className="rounded-xl px-3 py-1.5 border bg-black text-white text-sm"
+          disabled={submitting || !token}
+          className="rounded-xl px-3 py-1.5 border bg-black text-white text-sm disabled:opacity-50"
         >
-          {t("feedback.submit")}
+          {submitting ? t("feedback.sending") : t("feedback.submit")}
         </button>
-        {submitted && (
+        {done && (
           <span className="text-xs text-emerald-600">
             {t("feedback.thanks")}
           </span>

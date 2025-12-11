@@ -8,6 +8,7 @@ import { toMessage } from "../lib/error";
 import { useI18n } from "../i18n";
 import ServiceDetailModal from "../features/services/ServiceDetailModal";
 
+
 function isOnline(location: string | null | undefined) {
   if (!location) return false;
   try {
@@ -655,10 +656,13 @@ export default function ServicesList() {
       </Modal>
 
       {/* Detail-modal yhteiskomponentilla */}
-      <ServiceDetailModal
-        service={detail}
-        onClose={() => setDetail(null)}
-      />
+      
+        {detail && (
+        <ServiceDetailModal
+          service={detail}
+          onClose={() => setDetail(null)}
+        />
+      )}
     </main>
   );
 }

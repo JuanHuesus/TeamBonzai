@@ -366,11 +366,11 @@ const modeText = isOnline(item.location)
               </span>
             </div>
             <div className="text-sm text-neutral-600 flex flex-wrap gap-2">
-              <span>👤 {item.service_provider || "-"}</span>
+              <span> {item.service_provider || "-"}</span>
               <span>•</span>
-              <span>🗓 {dateText}</span>
+              <span> {dateText}</span>
               <span>•</span>
-              <span>🏷 {item.service_category || "-"}</span>
+              <span> {item.service_category || "-"}</span>
             </div>
             <div className="font-semibold">{priceText}</div>
           </div>
