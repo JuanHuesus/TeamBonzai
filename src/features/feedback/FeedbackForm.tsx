@@ -38,11 +38,6 @@ export default function FeedbackForm({ target, onSubmitted }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
-  const title =
-    target.kind === "listing"
-      ? t("feedback.forCourse", { name: target.listingName })
-      : t("feedback.forOrganizer", { name: target.userName ?? "" });
-
   const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
@@ -87,7 +82,7 @@ export default function FeedbackForm({ target, onSubmitted }: Props) {
 
   return (
     <form onSubmit={onSubmit} className="space-y-2">
-      <div className="font-semibold text-sm">{title}</div>
+      {/* Otsikko poistettu, koska ServiceDetailModal näyttää sen jo */}
 
       {!token && (
         <div className="text-xs text-neutral-500">
