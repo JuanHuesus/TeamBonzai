@@ -22,11 +22,10 @@ import FeedbackForm from "../feedback/FeedbackForm";
 import { createReport } from "../reports/api.reports";
 
 type Props = {
-  service: ListedService | null; // sallitaan null
+  service: ListedService | null;
   onClose: () => void;
 };
 
-/** Muuttaa keskiarvon tähdiksi, esim. 4.2 -> ★★★★☆ */
 function starsLine(avg: number) {
   const rounded = Math.round(avg);
   const full = "★".repeat(rounded);
@@ -34,7 +33,12 @@ function starsLine(avg: number) {
   return full + empty;
 }
 
-/** Laskee rating_count & avg backendin summary-rakenteesta (star1–star5 + average) */
+function isUuid(v: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    v.trim()
+  );
+}
+
 function computeSummary(
   summary: ListingRatingSummary | UserRatingSummary | null
 ): { ratingCount: number; avg: number } {
@@ -45,12 +49,10 @@ function computeSummary(
 
   if (ratingCount === 0) return { ratingCount: 0, avg: 0 };
 
-  // Jos backend on jo laskenut keskiarvon, käytetään sitä
   if (average !== null && average !== undefined) {
     return { ratingCount, avg: average };
   }
 
-  // Varalasku, jos average puuttuisi
   const totalStars =
     star1 * 1 + star2 * 2 + star3 * 3 + star4 * 4 + star5 * 5;
   const avg = totalStars / ratingCount;
@@ -60,13 +62,12 @@ function computeSummary(
 
 export default function ServiceDetailModal({ service, onClose }: Props) {
   const { t, lang } = useI18n();
-  const { email, token } = useAuth();
+  const { email, token, userId } = useAuth();
 
   const [listingSummary, setListingSummary] =
     useState<ListingRatingSummary | null>(null);
   const [listingRatings, setListingRatings] = useState<ListingRatingEntry[]>([]);
-  const [userSummary, setUserSummary] =
-    useState<UserRatingSummary | null>(null);
+  const [userSummary, setUserSummary] = useState<UserRatingSummary | null>(null);
   const [userRatings, setUserRatings] = useState<UserRatingEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -81,10 +82,24 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
 
   const locale = lang === "fi" ? "fi-FI" : "en-GB";
 
-  // organiserin tiedot – turvallisesti
-  const organizerId = service?.listing_creator ?? "";
-  const organizerName =
-    service?.service_provider || service?.listing_creator || "";
+  /**
+   * TÄRKEÄ: listing_creator pitää olla käyttäjän UUID.
+   * Jos backend vielä palauttaa nimen, user-rating ei voi toimia.
+   */
+  const organizerIdRaw = service?.listing_creator ?? "";
+  const organizerId = isUuid(organizerIdRaw) ? organizerIdRaw : "";
+
+  // näyttönimi (tulee yleensä service_provider:sta)
+  const organizerName = service?.service_provider || organizerIdRaw || "";
+
+  const isOwner =
+    !!userId &&
+    !!service &&
+    isUuid(service.listing_creator) &&
+    service.listing_creator === userId;
+
+  const canReport = !!token;
+  const canRateOrganizer = !!token && !!organizerId; // kirjautunut + UUID olemassa
 
   async function loadAll() {
     if (!service) {
@@ -99,12 +114,11 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
     setErr(null);
     try {
       const [ls, le] = await Promise.all([
-        // summary: jos 404 → ei summaryä
         getListingSummary(service.id).catch(() => null),
-        // listing-arvostelut: jos 404 → tyhjä lista
         getListingRatings(service.id).catch(() => []),
       ]);
-      if (ls) setListingSummary(ls);
+
+      setListingSummary(ls);
       setListingRatings(le);
 
       if (organizerId) {
@@ -112,21 +126,19 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
           getUserSummary(organizerId).catch(() => null),
           getUserRatings(organizerId).catch(() => []),
         ]);
-        if (us) setUserSummary(us);
+        setUserSummary(us);
         setUserRatings(ue);
       } else {
         setUserSummary(null);
         setUserRatings([]);
       }
     } catch (e: unknown) {
-      // tänne tullaan enää vain oikeissa virheissä (verkko poikki tms.)
       setErr(toMessage(e));
     } finally {
       setLoading(false);
     }
   }
 
-  // HUOM: hookit ajetaan AINA, myös kun service on null → ei hook-virhettä
   useEffect(() => {
     void loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -144,8 +156,6 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
     computeSummary(listingSummary);
   const { ratingCount: userRatingCount, avg: userAvg } =
     computeSummary(userSummary);
-
-  const canReport = !!token;
 
   const dateText = service?.datetime
     ? new Date(service.datetime).toLocaleDateString(locale)
@@ -178,7 +188,7 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
       setReportError(t("report.reasonRequired"));
       return;
     }
-    if (!service) return; // varmistus
+    if (!service) return;
 
     setReportSending(true);
     setReportError(null);
@@ -200,8 +210,7 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
     }
   };
 
-  // Varsinainen sisältö – jos service on null, näytetään lyhyt viesti
-    const body = !service ? (
+  const body = !service ? (
     <div className="text-sm text-neutral-500">
       {t("common.error") ?? "Kurssia ei löytynyt."}
     </div>
@@ -225,29 +234,40 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
                 {service.name}
               </h2>
               <div className="text-xs text-neutral-600 flex flex-wrap gap-2 mt-1">
-                <span> {service.service_provider}</span>
+                <span>{service.service_provider}</span>
                 <span>•</span>
-                <span> {service.location ?? "-"}</span>
+                <span>{service.location ?? "-"}</span>
                 <span>•</span>
-                <span> {dateText}</span>
+                <span>{dateText}</span>
                 <span>•</span>
-                <span> {service.service_category}</span>
+                <span>{service.service_category}</span>
               </div>
             </div>
             <span className="inline-flex items-center rounded-full border px-2 py-1 text-xs font-medium">
               {modeText}
             </span>
           </div>
+
           <p className="text-sm text-neutral-800">{service.description}</p>
+
           <div className="flex items-center justify-between pt-1">
             <div className="text-lg font-semibold">{priceText}</div>
-            <Link
-              to={`/edit/${service.id}`}
-              className="rounded-xl px-3 py-1.5 border bg-emerald-600 text-white text-xs hover:opacity-90"
-            >
-              Muokkaa
-            </Link>
+
+            {isOwner && (
+              <Link
+                to={`/edit/${service.id}`}
+                className="rounded-xl px-3 py-1.5 border bg-emerald-600 text-white text-xs hover:opacity-90"
+              >
+                Muokkaa
+              </Link>
+            )}
           </div>
+
+          {!isOwner && (
+            <div className="text-[11px] text-neutral-500">
+              Vain listauksen luoja voi muokata tätä listausta.
+            </div>
+          )}
         </div>
       </div>
 
@@ -258,9 +278,7 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
       )}
 
       {loading && (
-        <div className="text-sm text-neutral-500">
-          Ladataan palautteita…
-        </div>
+        <div className="text-sm text-neutral-500">Ladataan palautteita…</div>
       )}
 
       {/* Kurssin palaute */}
@@ -291,21 +309,14 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
         {sortedListingRatings.length > 0 && (
           <div className="mt-3 space-y-2 max-h-60 overflow-y-auto">
             {sortedListingRatings.map((r) => (
-              <div
-                key={r.id}
-                className="border rounded-xl p-2 text-xs bg-neutral-50"
-              >
+              <div key={r.id} className="border rounded-xl p-2 text-xs bg-neutral-50">
                 <div className="flex items-center justify-between gap-2">
-                  <div className="font-semibold">
-                    {starsLine(r.stars)}
-                  </div>
+                  <div className="font-semibold">{starsLine(r.stars)}</div>
                   <div className="text-[10px] text-neutral-500">
                     {new Date(r.created).toLocaleDateString(locale)}
                   </div>
                 </div>
-                {r.feedback && (
-                  <p className="mt-1 text-neutral-700">{r.feedback}</p>
-                )}
+                {r.feedback && <p className="mt-1 text-neutral-700">{r.feedback}</p>}
               </div>
             ))}
           </div>
@@ -313,75 +324,74 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
       </section>
 
       {/* Vetäjän palaute */}
-      {organizerId && (
-        <section className="rounded-2xl border p-3 space-y-2">
-          <div className="flex items-center justify-between gap-2">
-            <div className="font-semibold text-sm">
-              {t("feedback.organizerSectionTitle")} {organizerName}
-            </div>
-            {userRatingCount > 0 && (
-              <div className="flex items-center gap-2 text-xs text-amber-700">
-                <span>{starsLine(userAvg)}</span>
-                <span>
-                  {userAvg.toFixed(1)} · {userRatingCount} arvostelua
-                </span>
-              </div>
-            )}
+      <section className="rounded-2xl border p-3 space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <div className="font-semibold text-sm">
+            {t("feedback.organizerSectionTitle")} {organizerName}
           </div>
 
-          <FeedbackForm
-            target={{
-              kind: "user",
-              userId: organizerId,
-              userName: organizerName,
-            }}
-            onSubmitted={loadAll}
-          />
-
-          {userRatings.length > 0 && (
-            <div className="mt-3 space-y-2 max-h-48 overflow-y-auto">
-              {userRatings
-                .slice()
-                .sort(
-                  (a, b) =>
-                    new Date(b.created).getTime() -
-                    new Date(a.created).getTime()
-                )
-                .map((r) => (
-                  <div
-                    key={r.id}
-                    className="border rounded-xl p-2 text-xs bg-neutral-50"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="font-semibold">
-                        {starsLine(r.stars)}
-                      </div>
-                      <div className="text-[10px] text-neutral-500">
-                        {new Date(r.created).toLocaleDateString(locale)}
-                      </div>
-                    </div>
-                    {r.feedback && (
-                      <p className="mt-1 text-neutral-700">
-                        {r.feedback}
-                      </p>
-                    )}
-                  </div>
-                ))}
+          {userRatingCount > 0 && (
+            <div className="flex items-center gap-2 text-xs text-amber-700">
+              <span>{starsLine(userAvg)}</span>
+              <span>
+                {userAvg.toFixed(1)} · {userRatingCount} arvostelua
+              </span>
             </div>
           )}
-        </section>
-      )}
+        </div>
+
+        {!organizerId ? (
+          <div className="text-xs text-neutral-500">
+            Vetäjää ei voi arvioida ennen kuin backend palauttaa listing_creator-kentässä käyttäjän UUID:n
+            (nyt se on usein nimi).
+          </div>
+        ) : !token ? (
+          <div className="text-xs text-neutral-500">
+            Kirjaudu sisään, jotta voit arvioida vetäjää.
+          </div>
+        ) : (
+          <>
+            <FeedbackForm
+              target={{
+                kind: "user",
+                userId: organizerId,
+                userName: organizerName,
+              }}
+              onSubmitted={loadAll}
+            />
+
+            {userRatings.length > 0 && (
+              <div className="mt-3 space-y-2 max-h-48 overflow-y-auto">
+                {userRatings
+                  .slice()
+                  .sort(
+                    (a, b) =>
+                      new Date(b.created).getTime() -
+                      new Date(a.created).getTime()
+                  )
+                  .map((r) => (
+                    <div key={r.id} className="border rounded-xl p-2 text-xs bg-neutral-50">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="font-semibold">{starsLine(r.stars)}</div>
+                        <div className="text-[10px] text-neutral-500">
+                          {new Date(r.created).toLocaleDateString(locale)}
+                        </div>
+                      </div>
+                      {r.feedback && <p className="mt-1 text-neutral-700">{r.feedback}</p>}
+                    </div>
+                  ))}
+              </div>
+            )}
+          </>
+        )}
+      </section>
 
       {/* Raportointi */}
       <section className="rounded-2xl border p-3 space-y-2">
         <div className="flex items-center justify-between gap-2">
-          <div className="font-semibold text-sm">
-            {t("report.sectionTitle")}
-          </div>
+          <div className="font-semibold text-sm">{t("report.sectionTitle")}</div>
           {!email && (
-            <div className="text-xs text-neutral-500">
-              {t("report.loginHint")}
-            </div>
+            <div className="text-xs text-neutral-500">{t("report.loginHint")}</div>
           )}
         </div>
 
@@ -408,9 +418,7 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
               value={reportDetails}
               onChange={(e) => setReportDetails(e.target.value)}
             />
-            {reportError && (
-              <div className="text-xs text-red-600">{reportError}</div>
-            )}
+            {reportError && <div className="text-xs text-red-600">{reportError}</div>}
             <div className="flex items-center gap-2">
               <button
                 type="button"
@@ -443,11 +451,7 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
   );
 
   return (
-    <Modal
-      open={!!service} // popup näkyy vain kun service on
-      onClose={onClose}
-      title={service?.name ?? "Tiedot"}
-    >
+    <Modal open={!!service} onClose={onClose} title={service?.name ?? "Tiedot"}>
       {body}
     </Modal>
   );

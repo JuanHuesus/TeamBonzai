@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   createService,
   getService,
@@ -9,10 +9,9 @@ import {
 } from "../features/services/api.services";
 import type { ListedService } from "../types";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import type { FormEvent } from "react";
 import { toMessage } from "../lib/error";
 import { useI18n } from "../i18n";
-
+import { useAuth } from "../useAuth";
 
 /** Palauttaa true jos location on URL → tulkitaan etätilaksi */
 function isOnline(location: string | null | undefined) {
@@ -23,6 +22,13 @@ function isOnline(location: string | null | undefined) {
   } catch {
     return false;
   }
+}
+
+/** UUID-check */
+function isUuid(v: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    v.trim()
+  );
 }
 
 /** Pilko ISO -> YYYY-MM-DD + HH:mm (paikallinen) */
@@ -39,12 +45,13 @@ function splitIso(iso: string | null) {
 /** Rakenna ISO UTC:na YYYY-MM-DD + HH:mm -> 2025-07-01T10:30:00Z */
 function combineToIso(date: string, time: string): string | null {
   if (!date && !time) return null;
-  if (!date || !time) return null; // ei lähetetä puolikasta aikaa
-  // muodosta paikallisen aikavyöhykkeen aika ja käännä UTC:ksi
+  if (!date || !time) return null;
   const [y, m, d] = date.split("-").map(Number);
   const [hh, mm] = time.split(":").map(Number);
   const local = new Date(y, (m ?? 1) - 1, d ?? 1, hh ?? 0, mm ?? 0, 0, 0);
-  return new Date(local.getTime() - local.getTimezoneOffset() * 60000).toISOString().replace(/\.\d{3}Z$/, "Z");
+  return new Date(local.getTime() - local.getTimezoneOffset() * 60000)
+    .toISOString()
+    .replace(/\.\d{3}Z$/, "Z");
 }
 
 const empty: ListedService = {
@@ -54,7 +61,7 @@ const empty: ListedService = {
   datetime: null,
   location: "",
   service_provider: "",
-  listing_creator: "",
+  listing_creator: "", // tulee automaattisesti kirjautuneelta käyttäjältä (UUID)
   price: "",
   service_type: "1on1",
   attendee_limit: "1",
@@ -69,7 +76,9 @@ export default function ServiceEdit() {
   const isNew = id === undefined;
   const nav = useNavigate();
   const { t, lang } = useI18n();
+  const { token, userId } = useAuth();
 
+  const isLoggedIn = !!token && !!userId;
 
   const [item, setItem] = useState<ListedService>(empty);
   const [datePart, setDatePart] = useState("");
@@ -78,10 +87,19 @@ export default function ServiceEdit() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  // uusi listaus: aseta listing_creator automaattisesti
+  useEffect(() => {
+    if (isNew && userId) {
+      setItem((prev) => ({ ...prev, listing_creator: userId }));
+    }
+  }, [isNew, userId]);
 
   // Lataa olemassa oleva kohde
   useEffect(() => {
     if (!isNew && id) {
+      setLoading(true);
       (async () => {
         try {
           const data = await getService(id);
@@ -91,14 +109,16 @@ export default function ServiceEdit() {
           setTimePart(time);
         } catch (e: unknown) {
           setError(toMessage(e));
+        } finally {
+          setLoading(false);
         }
       })();
     } else {
-      // uusi: nollaa aikaosat
       setDatePart("");
       setTimePart("");
-      setItem(empty);
+      setItem((prev) => ({ ...empty, listing_creator: prev.listing_creator || "" }));
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, isNew]);
 
   // Päivitä item.datetime kun paikallisia kenttiä muokataan
@@ -106,19 +126,25 @@ export default function ServiceEdit() {
     setItem((prev) => ({ ...prev, datetime: combineToIso(datePart, timePart) }));
   }, [datePart, timePart]);
 
-  // Pieniä johdettuja arvoja esikatseluun
+  const ownerId = item.listing_creator;
+  const ownerLooksValid = isUuid(ownerId);
+  const isOwner = !!userId && ownerLooksValid && ownerId === userId;
+
+  // Edit-sivu toimii myös “katso”-tilassa:
+  const readOnly = !isNew && !isOwner;
+
   const dateText = useMemo(
     () =>
       item.datetime
-        ? new Date(item.datetime).toLocaleDateString(
-            lang === "fi" ? "fi-FI" : "en-GB"
-          )
+        ? new Date(item.datetime).toLocaleDateString(lang === "fi" ? "fi-FI" : "en-GB")
         : t("course.timeTBA"),
     [item.datetime, lang, t]
   );
-const modeText = isOnline(item.location)
+
+  const modeText = isOnline(item.location)
     ? t("course.mode.online")
     : t("course.mode.inperson");
+
   const priceText = item.price?.trim() ? item.price : t("course.free");
   const img = item.image || "https://placehold.co/1600x900?text=Kuva";
 
@@ -128,18 +154,33 @@ const modeText = isOnline(item.location)
     setError(null);
 
     try {
+      if (!isLoggedIn) throw new Error("Kirjaudu sisään luodaksesi tai muokataksesi listauksia.");
+      if (!isNew && !isOwner) throw new Error("Vain listauksen luoja voi muokata tätä listausta.");
+
       // minimivalidaatio
       if (!item.name.trim()) throw new Error("Nimi on pakollinen.");
       if (!item.description.trim()) throw new Error("Kuvaus on pakollinen.");
 
       if (isNew) {
         const { id: _id, created: _c, updated: _u, ...rest } = item;
-        const payload: CreateListedService = rest;
+
+        const payload: CreateListedService = {
+          ...rest,
+          // varmistetaan että listing_creator on oma UUID
+          listing_creator: userId!,
+        };
+
         const created = await createService(payload);
         nav(`/edit/${created.id}`);
       } else {
         const { id: realId, created: _c, updated: _u, ...rest } = item;
-        const payload: UpdateListedService = rest;
+
+        const payload: UpdateListedService = {
+          ...rest,
+          // pidetään creator ennallaan (backendin pitäisi myös pakottaa)
+          listing_creator: item.listing_creator,
+        };
+
         await updateService(realId, payload);
         nav("/");
       }
@@ -152,7 +193,16 @@ const modeText = isOnline(item.location)
 
   const onDelete = async () => {
     if (!id) return;
+    if (!isLoggedIn) {
+      setError("Kirjaudu sisään poistaaksesi listauksen.");
+      return;
+    }
+    if (!isOwner) {
+      setError("Vain listauksen luoja voi poistaa tämän listauksen.");
+      return;
+    }
     if (!confirm("Poistetaanko tämä listaus? Toimintoa ei voi perua.")) return;
+
     try {
       setDeleting(true);
       await deleteService(id);
@@ -164,21 +214,45 @@ const modeText = isOnline(item.location)
     }
   };
 
+  // jos yritetään luoda uusi ilman loginia → näytä ohje
+  if (isNew && !isLoggedIn) {
+    return (
+      <main className="mx-auto max-w-3xl px-4 py-8">
+        <h1 className="text-2xl font-bold mb-2">Uusi listaus</h1>
+        <p className="text-sm text-neutral-600">
+          Kirjaudu sisään, jotta voit luoda listauksen.
+        </p>
+        <div className="mt-3 flex gap-2">
+          <Link to="/login" className="rounded-xl px-3 py-1.5 border bg-black text-white text-sm">
+            Kirjaudu
+          </Link>
+          <Link to="/" className="rounded-xl px-3 py-1.5 border text-sm">
+            Takaisin
+          </Link>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
-      {/* Otsikko + palaaminen */}
       <div className="mb-6 flex items-center justify-between gap-3">
         <div>
           <div className="text-sm text-neutral-500">
             <Link className="underline hover:no-underline" to="/">← Takaisin listaan</Link>
           </div>
           <h1 className="text-2xl md:text-3xl font-bold mt-1">
-            {isNew ? "Uusi listaus" : "Muokkaa listausta"}
+            {isNew ? "Uusi listaus" : readOnly ? "Listaus (vain katselu)" : "Muokkaa listausta"}
           </h1>
+          {!isNew && readOnly && (
+            <div className="text-sm text-neutral-600 mt-1">
+              Vain listauksen luoja voi muokata tätä. Sinä voit vain katsella.
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
-          {!isNew && (
+          {!isNew && isOwner && (
             <button
               type="button"
               onClick={onDelete}
@@ -189,17 +263,25 @@ const modeText = isOnline(item.location)
               {deleting ? "Poistetaan…" : "Poista"}
             </button>
           )}
+
           <Link to="/" className="rounded-xl px-3 py-1.5 border">Peruuta</Link>
-          <button
-            form="service-form"
-            type="submit"
-            disabled={saving}
-            className="rounded-xl px-4 py-2 border bg-black text-white disabled:opacity-50"
-          >
-            {saving ? "Tallennetaan…" : "Tallenna"}
-          </button>
+
+          {!readOnly && (
+            <button
+              form="service-form"
+              type="submit"
+              disabled={saving}
+              className="rounded-xl px-4 py-2 border bg-black text-white disabled:opacity-50"
+            >
+              {saving ? "Tallennetaan…" : "Tallenna"}
+            </button>
+          )}
         </div>
       </div>
+
+      {loading && (
+        <div className="mb-6 text-sm text-neutral-500">Ladataan…</div>
+      )}
 
       {error && (
         <div className="mb-6 rounded-xl border bg-red-50 text-red-700 p-3">
@@ -208,9 +290,11 @@ const modeText = isOnline(item.location)
       )}
 
       <div className="grid lg:grid-cols-3 gap-6">
-        {/* Lomake */}
-        <form id="service-form" onSubmit={onSubmit} className="lg:col-span-2 rounded-2xl border bg-white p-4 md:p-6 shadow-sm space-y-5">
-          {/* Perustiedot */}
+        <form
+          id="service-form"
+          onSubmit={onSubmit}
+          className="lg:col-span-2 rounded-2xl border bg-white p-4 md:p-6 shadow-sm space-y-5"
+        >
           <section className="space-y-3">
             <div>
               <label className="block text-sm font-medium mb-1">Nimi *</label>
@@ -219,6 +303,7 @@ const modeText = isOnline(item.location)
                 value={item.name}
                 onChange={(e) => setItem({ ...item, name: e.target.value })}
                 required
+                disabled={readOnly}
               />
             </div>
 
@@ -229,6 +314,7 @@ const modeText = isOnline(item.location)
                 value={item.description}
                 onChange={(e) => setItem({ ...item, description: e.target.value })}
                 required
+                disabled={readOnly}
               />
               <div className="text-xs text-neutral-500 mt-1">
                 Kerro lyhyesti mitä oppija saa kurssilta / tunnilta.
@@ -236,7 +322,6 @@ const modeText = isOnline(item.location)
             </div>
           </section>
 
-          {/* Aika & paikka */}
           <section className="grid md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium mb-1">Päivä</label>
@@ -245,6 +330,7 @@ const modeText = isOnline(item.location)
                 className="w-full rounded-xl border px-3 py-2 text-sm"
                 value={datePart}
                 onChange={(e) => setDatePart(e.target.value)}
+                disabled={readOnly}
               />
             </div>
             <div>
@@ -254,8 +340,10 @@ const modeText = isOnline(item.location)
                 className="w-full rounded-xl border px-3 py-2 text-sm"
                 value={timePart}
                 onChange={(e) => setTimePart(e.target.value)}
+                disabled={readOnly}
               />
             </div>
+
             <div className="md:col-span-2">
               <label className="block text-sm font-medium mb-1">Sijainti (osoite tai linkki)</label>
               <input
@@ -263,6 +351,7 @@ const modeText = isOnline(item.location)
                 value={item.location ?? ""}
                 onChange={(e) => setItem({ ...item, location: e.target.value })}
                 placeholder="Esim. https://zoom.us/j/..., tai 'Koulukatu 3, Turku'"
+                disabled={readOnly}
               />
               <div className="text-xs text-neutral-500 mt-1">
                 {isOnline(item.location) ? "Tulkitaan etätilaksi." : "Tulkitaan lähikurssiksi."}
@@ -270,7 +359,6 @@ const modeText = isOnline(item.location)
             </div>
           </section>
 
-          {/* Metatiedot */}
           <section className="grid md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium mb-1">Opettaja / palveluntarjoaja</label>
@@ -278,16 +366,23 @@ const modeText = isOnline(item.location)
                 className="w-full rounded-xl border px-3 py-2 text-sm"
                 value={item.service_provider}
                 onChange={(e) => setItem({ ...item, service_provider: e.target.value })}
+                disabled={readOnly}
               />
             </div>
+
             <div>
-              <label className="block text-sm font-medium mb-1">Listauksen luoja</label>
+              <label className="block text-sm font-medium mb-1">Listauksen luoja (UUID)</label>
               <input
-                className="w-full rounded-xl border px-3 py-2 text-sm"
+                className="w-full rounded-xl border px-3 py-2 text-sm bg-neutral-50"
                 value={item.listing_creator}
-                onChange={(e) => setItem({ ...item, listing_creator: e.target.value })}
+                readOnly
+                disabled
               />
+              <div className="text-xs text-neutral-500 mt-1">
+                Tämä asetetaan automaattisesti kirjautuneen käyttäjän perusteella.
+              </div>
             </div>
+
             <div>
               <label className="block text-sm font-medium mb-1">Hinta (teksti)</label>
               <input
@@ -295,14 +390,17 @@ const modeText = isOnline(item.location)
                 value={item.price}
                 onChange={(e) => setItem({ ...item, price: e.target.value })}
                 placeholder='Esim. "€29" tai "Free"'
+                disabled={readOnly}
               />
             </div>
+
             <div>
               <label className="block text-sm font-medium mb-1">Tyyppi</label>
               <select
                 className="w-full rounded-xl border px-3 py-2 text-sm"
                 value={item.service_type}
                 onChange={(e) => setItem({ ...item, service_type: e.target.value })}
+                disabled={readOnly}
               >
                 <option value="1on1">1on1</option>
                 <option value="group">group</option>
@@ -310,6 +408,7 @@ const modeText = isOnline(item.location)
                 <option value="study material">study material</option>
               </select>
             </div>
+
             <div>
               <label className="block text-sm font-medium mb-1">Osallistujaraja</label>
               <input
@@ -317,8 +416,10 @@ const modeText = isOnline(item.location)
                 value={item.attendee_limit}
                 onChange={(e) => setItem({ ...item, attendee_limit: e.target.value })}
                 placeholder='Esim. "1" tai "unlimited"'
+                disabled={readOnly}
               />
             </div>
+
             <div>
               <label className="block text-sm font-medium mb-1">Kategoria</label>
               <input
@@ -326,8 +427,10 @@ const modeText = isOnline(item.location)
                 value={item.service_category}
                 onChange={(e) => setItem({ ...item, service_category: e.target.value })}
                 placeholder='Esim. "cooking", "baking", "vegetarian"…'
+                disabled={readOnly}
               />
             </div>
+
             <div className="md:col-span-2">
               <label className="block text-sm font-medium mb-1">Kansikuva (URL)</label>
               <input
@@ -335,42 +438,52 @@ const modeText = isOnline(item.location)
                 value={item.image ?? ""}
                 onChange={(e) => setItem({ ...item, image: e.target.value })}
                 placeholder="https://…"
+                disabled={readOnly}
               />
             </div>
           </section>
 
-          {/* Alapalkin napit mobiilissa (varmistaa että on aina näkyvissä) */}
-          <div className="flex items-center justify-end gap-2 pt-2">
-            <Link to="/" className="rounded-xl px-3 py-1.5 border">Peruuta</Link>
-            <button type="submit" disabled={saving} className="rounded-xl px-4 py-2 border bg-black text-white disabled:opacity-50">
-              {saving ? "Tallennetaan…" : "Tallenna"}
-            </button>
-          </div>
+          {!readOnly && (
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <Link to="/" className="rounded-xl px-3 py-1.5 border">Peruuta</Link>
+              <button
+                type="submit"
+                disabled={saving}
+                className="rounded-xl px-4 py-2 border bg-black text-white disabled:opacity-50"
+              >
+                {saving ? "Tallennetaan…" : "Tallenna"}
+              </button>
+            </div>
+          )}
         </form>
 
-        {/* Esikatselu / oikea palsta */}
         <aside className="rounded-2xl border bg-white shadow-sm overflow-hidden">
           <div className="aspect-[16/9] overflow-hidden">
             <img
               src={img}
               alt=""
               className="h-full w-full object-cover"
-              onError={(e) => { (e.currentTarget as HTMLImageElement).src = "https://placehold.co/1600x900?text=Kuva"; }}
+              onError={(e) => {
+                (e.currentTarget as HTMLImageElement).src =
+                  "https://placehold.co/1600x900?text=Kuva";
+              }}
             />
           </div>
           <div className="p-4 space-y-3">
             <div className="flex items-start justify-between gap-3">
-              <h3 className="font-semibold text-lg leading-tight">{item.name || "Nimi tulee tähän"}</h3>
+              <h3 className="font-semibold text-lg leading-tight">
+                {item.name || "Nimi tulee tähän"}
+              </h3>
               <span className="inline-flex items-center rounded-full border px-2 py-1 text-xs font-medium">
                 {modeText}
               </span>
             </div>
             <div className="text-sm text-neutral-600 flex flex-wrap gap-2">
-              <span> {item.service_provider || "-"}</span>
+              <span>{item.service_provider || "-"}</span>
               <span>•</span>
-              <span> {dateText}</span>
+              <span>{dateText}</span>
               <span>•</span>
-              <span> {item.service_category || "-"}</span>
+              <span>{item.service_category || "-"}</span>
             </div>
             <div className="font-semibold">{priceText}</div>
           </div>
