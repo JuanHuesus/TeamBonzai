@@ -225,13 +225,13 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
                 {service.name}
               </h2>
               <div className="text-xs text-neutral-600 flex flex-wrap gap-2 mt-1">
-                <span>👤 {service.service_provider}</span>
+                <span> {service.service_provider}</span>
                 <span>•</span>
-                <span>📍 {service.location ?? "-"}</span>
+                <span> {service.location ?? "-"}</span>
                 <span>•</span>
-                <span>🗓 {dateText}</span>
+                <span> {dateText}</span>
                 <span>•</span>
-                <span>🏷 {service.service_category}</span>
+                <span> {service.service_category}</span>
               </div>
             </div>
             <span className="inline-flex items-center rounded-full border px-2 py-1 text-xs font-medium">

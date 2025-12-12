@@ -20,16 +20,32 @@ import type {
  *  GET    /api/ratings/user/:userId/summary
  */
 
+import type { AxiosError } from "axios";
+
 export async function postListingRating(
   listingId: string,
   payload: { stars: number; feedback?: string; public?: boolean }
-): Promise<ListingRatingEntry> {
-  const { data } = await api.post<ListingRatingEntry>(
-    `/ratings/listing/${listingId}`,
-    payload
-  );
-  return data;
+) {
+  try {
+    const { data } = await api.post(
+      `/ratings/listing/${listingId}`,
+      payload
+    );
+    return data;
+  } catch (err: unknown) {
+    if (err instanceof Error) {
+      const axiosErr = err as AxiosError<{ error?: string; message?: string }>;
+
+      console.error("STATUS:", axiosErr.response?.status);
+      console.error("DATA:", axiosErr.response?.data);
+    } else {
+      console.error("Unknown error", err);
+    }
+
+    throw err;
+  }
 }
+
 
 export async function getListingRatings(
   listingId: string

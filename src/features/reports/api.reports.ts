@@ -16,21 +16,26 @@ export type CreateUserReportPayload = {
   details?: string;
 };
 
-/**
- * app.use('/api/reports', reportRoutes);
- *
- * Eli reitit:
- *  POST   /api/reports
- *  GET    /api/reports/mine
- *  GET    /api/reports            (admin)
- *  GET    /api/reports/:id        (admin)
- *  PATCH  /api/reports/:id/status (admin)
- */
-
 export async function createReport(
   payload: CreateServiceReportPayload | CreateUserReportPayload
 ): Promise<Report> {
-  const { data } = await api.post<Report>("/reports", payload);
+  // 🔥 tärkein: lähetetään vain relevantit kentät, EI null-kenttiä
+  const cleaned =
+    payload.target_type === "service"
+      ? {
+          target_type: "service" as const,
+          reported_service_id: payload.reported_service_id,
+          reason: payload.reason,
+          ...(payload.details ? { details: payload.details } : {}),
+        }
+      : {
+          target_type: "user" as const,
+          reported_user_id: payload.reported_user_id,
+          reason: payload.reason,
+          ...(payload.details ? { details: payload.details } : {}),
+        };
+
+  const { data } = await api.post<Report>("/reports", cleaned);
   return data;
 }
 
