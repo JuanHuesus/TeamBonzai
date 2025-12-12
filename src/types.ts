@@ -1,5 +1,4 @@
-// src/types.ts
-export type User = {
+xport type User = {
   id: string;
   firstname: string;
   surname: string;

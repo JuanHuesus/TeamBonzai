@@ -1,4 +1,3 @@
-// src/features/feedback/FeedbackForm.tsx
 import { useState, type FormEvent } from "react";
 import { useI18n } from "../../i18n";
 import { useAuth } from "../../useAuth";

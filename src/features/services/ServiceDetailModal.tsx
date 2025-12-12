@@ -20,12 +20,14 @@ import {
 } from "../ratings/api.ratings";
 import FeedbackForm from "../feedback/FeedbackForm";
 import { createReport } from "../reports/api.reports";
+import { getUserProfileById } from "../users/api.users"; // ✅ LISÄTTY
 
 type Props = {
-  service: ListedService | null;
+  service: ListedService | null; // sallitaan null
   onClose: () => void;
 };
 
+/** Muuttaa keskiarvon tähdiksi, esim. 4.2 -> ★★★★☆ */
 function starsLine(avg: number) {
   const rounded = Math.round(avg);
   const full = "★".repeat(rounded);
@@ -33,12 +35,14 @@ function starsLine(avg: number) {
   return full + empty;
 }
 
+/** UUID-check */
 function isUuid(v: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
     v.trim()
   );
 }
 
+/** Laskee rating_count & avg backendin summary-rakenteesta */
 function computeSummary(
   summary: ListingRatingSummary | UserRatingSummary | null
 ): { ratingCount: number; avg: number } {
@@ -62,7 +66,7 @@ function computeSummary(
 
 export default function ServiceDetailModal({ service, onClose }: Props) {
   const { t, lang } = useI18n();
-  const { email, token, userId } = useAuth();
+  const { email, token } = useAuth();
 
   const [listingSummary, setListingSummary] =
     useState<ListingRatingSummary | null>(null);
@@ -71,6 +75,9 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
   const [userRatings, setUserRatings] = useState<UserRatingEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  // ✅ Vetäjän nimi (haetaan users/:id)
+  const [organizerDisplayName, setOrganizerDisplayName] = useState<string>("");
 
   // Report-form
   const [reportOpen, setReportOpen] = useState(false);
@@ -83,23 +90,20 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
   const locale = lang === "fi" ? "fi-FI" : "en-GB";
 
   /**
-   * TÄRKEÄ: listing_creator pitää olla käyttäjän UUID.
-   * Jos backend vielä palauttaa nimen, user-rating ei voi toimia.
+   * listing_creator on nyt tarkoituksella käyttäjän UUID.
    */
   const organizerIdRaw = service?.listing_creator ?? "";
   const organizerId = isUuid(organizerIdRaw) ? organizerIdRaw : "";
 
-  // näyttönimi (tulee yleensä service_provider:sta)
-  const organizerName = service?.service_provider || organizerIdRaw || "";
-
-  const isOwner =
-    !!userId &&
-    !!service &&
-    isUuid(service.listing_creator) &&
-    service.listing_creator === userId;
-
-  const canReport = !!token;
-  const canRateOrganizer = !!token && !!organizerId; // kirjautunut + UUID olemassa
+  // fallback jos profiilia ei saada haettua
+  useEffect(() => {
+    if (!service) {
+      setOrganizerDisplayName("");
+      return;
+    }
+    // näytä mieluummin service_provider kuin UUID
+    setOrganizerDisplayName(service.service_provider || "");
+  }, [service?.id]);
 
   async function loadAll() {
     if (!service) {
@@ -107,6 +111,7 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
       setListingRatings([]);
       setUserSummary(null);
       setUserRatings([]);
+      setOrganizerDisplayName("");
       return;
     }
 
@@ -121,7 +126,19 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
       setListingSummary(ls);
       setListingRatings(le);
 
+      // ✅ Hae vetäjän nimi + arviot vain jos organizerId on UUID
       if (organizerId) {
+        // nimi
+        try {
+          const prof = await getUserProfileById(organizerId);
+          const full = `${prof.firstname ?? ""} ${prof.surname ?? ""}`.trim();
+          setOrganizerDisplayName(full || service.service_provider || "Vetäjä");
+        } catch {
+          // jos /users/:id ei ole sallittu ilman authia tms.
+          setOrganizerDisplayName(service.service_provider || "Vetäjä");
+        }
+
+        // arviot + summary
         const [us, ue] = await Promise.all([
           getUserSummary(organizerId).catch(() => null),
           getUserRatings(organizerId).catch(() => []),
@@ -131,6 +148,7 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
       } else {
         setUserSummary(null);
         setUserRatings([]);
+        setOrganizerDisplayName(service.service_provider || "Vetäjä");
       }
     } catch (e: unknown) {
       setErr(toMessage(e));
@@ -173,11 +191,11 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
     }
   })();
 
-  const modeText = isOnline
-    ? t("course.mode.online")
-    : t("course.mode.inperson");
-
+  const modeText = isOnline ? t("course.mode.online") : t("course.mode.inperson");
   const img = service?.image || "https://placehold.co/1200x675?text=Kuva";
+
+  const canReport = !!token;
+  const canRateOrganizer = !!organizerId; // FeedbackForm hoitaa login-pakon
 
   const onSendReport = async () => {
     if (!token) {
@@ -230,9 +248,7 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
         <div className="p-4 space-y-3">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h2 className="text-lg font-semibold leading-tight">
-                {service.name}
-              </h2>
+              <h2 className="text-lg font-semibold leading-tight">{service.name}</h2>
               <div className="text-xs text-neutral-600 flex flex-wrap gap-2 mt-1">
                 <span>{service.service_provider}</span>
                 <span>•</span>
@@ -247,27 +263,16 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
               {modeText}
             </span>
           </div>
-
           <p className="text-sm text-neutral-800">{service.description}</p>
-
           <div className="flex items-center justify-between pt-1">
             <div className="text-lg font-semibold">{priceText}</div>
-
-            {isOwner && (
-              <Link
-                to={`/edit/${service.id}`}
-                className="rounded-xl px-3 py-1.5 border bg-emerald-600 text-white text-xs hover:opacity-90"
-              >
-                Muokkaa
-              </Link>
-            )}
+            <Link
+              to={`/edit/${service.id}`}
+              className="rounded-xl px-3 py-1.5 border bg-emerald-600 text-white text-xs hover:opacity-90"
+            >
+              Muokkaa
+            </Link>
           </div>
-
-          {!isOwner && (
-            <div className="text-[11px] text-neutral-500">
-              Vain listauksen luoja voi muokata tätä listausta.
-            </div>
-          )}
         </div>
       </div>
 
@@ -284,9 +289,7 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
       {/* Kurssin palaute */}
       <section className="rounded-2xl border p-3 space-y-2">
         <div className="flex items-center justify-between gap-2">
-          <div className="font-semibold text-sm">
-            {t("feedback.courseSectionTitle")}
-          </div>
+          <div className="font-semibold text-sm">{t("feedback.courseSectionTitle")}</div>
           {listingRatingCount > 0 && (
             <div className="flex items-center gap-2 text-xs text-amber-700">
               <span>{starsLine(listingAvg)}</span>
@@ -298,11 +301,7 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
         </div>
 
         <FeedbackForm
-          target={{
-            kind: "listing",
-            listingId: service.id,
-            listingName: service.name,
-          }}
+          target={{ kind: "listing", listingId: service.id, listingName: service.name }}
           onSubmitted={loadAll}
         />
 
@@ -327,10 +326,11 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
       <section className="rounded-2xl border p-3 space-y-2">
         <div className="flex items-center justify-between gap-2">
           <div className="font-semibold text-sm">
-            {t("feedback.organizerSectionTitle")} {organizerName}
+            {t("feedback.organizerSectionTitle")}{" "}
+            {organizerDisplayName || "Vetäjä"}
           </div>
 
-          {userRatingCount > 0 && (
+          {canRateOrganizer && userRatingCount > 0 && (
             <div className="flex items-center gap-2 text-xs text-amber-700">
               <span>{starsLine(userAvg)}</span>
               <span>
@@ -340,23 +340,14 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
           )}
         </div>
 
-        {!organizerId ? (
+        {!canRateOrganizer ? (
           <div className="text-xs text-neutral-500">
-            Vetäjää ei voi arvioida ennen kuin backend palauttaa listing_creator-kentässä käyttäjän UUID:n
-            (nyt se on usein nimi).
-          </div>
-        ) : !token ? (
-          <div className="text-xs text-neutral-500">
-            Kirjaudu sisään, jotta voit arvioida vetäjää.
+            Vetäjää ei voi arvioida tällä hetkellä (listing_creator ei ole UUID).
           </div>
         ) : (
           <>
             <FeedbackForm
-              target={{
-                kind: "user",
-                userId: organizerId,
-                userName: organizerName,
-              }}
+              target={{ kind: "user", userId: organizerId, userName: organizerDisplayName }}
               onSubmitted={loadAll}
             />
 
@@ -366,8 +357,7 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
                   .slice()
                   .sort(
                     (a, b) =>
-                      new Date(b.created).getTime() -
-                      new Date(a.created).getTime()
+                      new Date(b.created).getTime() - new Date(a.created).getTime()
                   )
                   .map((r) => (
                     <div key={r.id} className="border rounded-xl p-2 text-xs bg-neutral-50">
@@ -390,9 +380,7 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
       <section className="rounded-2xl border p-3 space-y-2">
         <div className="flex items-center justify-between gap-2">
           <div className="font-semibold text-sm">{t("report.sectionTitle")}</div>
-          {!email && (
-            <div className="text-xs text-neutral-500">{t("report.loginHint")}</div>
-          )}
+          {!email && <div className="text-xs text-neutral-500">{t("report.loginHint")}</div>}
         </div>
 
         <button
@@ -429,9 +417,7 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
                 {reportSending ? t("report.sending") : t("report.send")}
               </button>
               {reportDone && (
-                <span className="text-xs text-emerald-600">
-                  {t("report.thanks")}
-                </span>
+                <span className="text-xs text-emerald-600">{t("report.thanks")}</span>
               )}
             </div>
           </div>
@@ -439,11 +425,7 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
       </section>
 
       <div className="flex justify-end gap-2">
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-xl px-3 py-1.5 border text-sm"
-        >
+        <button type="button" onClick={onClose} className="rounded-xl px-3 py-1.5 border text-sm">
           {t("common.close")}
         </button>
       </div>

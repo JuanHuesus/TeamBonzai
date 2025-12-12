@@ -1,4 +1,3 @@
-// src/api.ts
 import axios from "axios";
 
 const baseURL =
@@ -45,3 +44,4 @@ api.interceptors.request.use((config) => {
   }
   return config;
 });
+

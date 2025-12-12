@@ -2,13 +2,18 @@ import { Link, Outlet } from "react-router-dom";
 import { useAuth } from "./useAuth";
 import { useI18n } from "./i18n";
 
+
+
+
 export default function AppLayout() {
   const { email, logout, role } = useAuth();
   const { t, lang, setLang } = useI18n();
+;
 
   const isModerator = role === "admin" || role === "moderator";
 
   // appLayout kokoaa yhteisen headerin, footerin ja reitityksen ympärille
+  
   return (
     <div className="min-h-screen flex flex-col">
       <header className="sticky top-0 z-10 border-b border-orange-100 bg-white/90 backdrop-blur">

@@ -1,4 +1,3 @@
-// src/features/ratings/api.ratings.ts
 import { api } from "../../api";
 import type {
   ListingRatingEntry,

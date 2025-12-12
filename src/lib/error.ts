@@ -1,21 +1,23 @@
+// src/lib/error.ts
 import axios from "axios";
 
+/**
+ * Muuttaa catch(err) -tyyppisen virheen ihmisluettavaksi viestiksi.
+ * - AxiosError: yritetään lukea backendin { message } tai fallback err.message
+ * - Error: err.message
+ * - muu: yritetään JSON.stringify
+ */
 export function toMessage(err: unknown): string {
   if (axios.isAxiosError(err)) {
-    const data: any = err.response?.data;
-
-    // backendin raportti-API palauttaa { message, error }
-    const raw = (data?.message || data?.error || err.message) as string;
-
-    if (typeof data?.error === "string" && data.error.includes("fk_reports_reporter")) {
-      return "Raporttia ei voitu tallentaa, koska kirjautumistieto ei vastaa backendin käyttäjää (token/DB epäsynkassa). Kirjaudu ulos ja sisään uudestaan. Jos ei auta, backendin DB tai tokenin userId on rikki.";
-    }
-
-    return raw;
+    // Backend voi palauttaa esim { message: "..." }
+    const data = err.response?.data as { message?: string } | undefined;
+    return data?.message ?? err.message;
   }
 
+  // Normaali JS Error
   if (err instanceof Error) return err.message;
 
+  // Viimeinen fallback
   try {
     return JSON.stringify(err);
   } catch {
