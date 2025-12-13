@@ -1,4 +1,4 @@
-xport type User = {
+export type User = {
   id: string;
   firstname: string;
   surname: string;
