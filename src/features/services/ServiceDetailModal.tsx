@@ -20,14 +20,15 @@ import {
 } from "../ratings/api.ratings";
 import FeedbackForm from "../feedback/FeedbackForm";
 import { createReport } from "../reports/api.reports";
-import { getUserProfileById } from "../users/api.users"; // ✅ LISÄTTY
+import { getUserProfileById } from "../users/api.users";
 
 type Props = {
-  service: ListedService | null; // sallitaan null
+  // Modal avataan, kun service != null. Null sallitaan, jotta komponentti voi olla aina renderöitynä.
+  service: ListedService | null;
   onClose: () => void;
 };
 
-/** Muuttaa keskiarvon tähdiksi, esim. 4.2 -> ★★★★☆ */
+/** Muuttaa keskiarvon “tähtiriviksi”, esim. 4.2 -> ★★★★☆ (UI-esitys) */
 function starsLine(avg: number) {
   const rounded = Math.round(avg);
   const full = "★".repeat(rounded);
@@ -35,14 +36,18 @@ function starsLine(avg: number) {
   return full + empty;
 }
 
-/** UUID-check */
+/** Kevyt UUID-validointi (käytetään varmistamaan että listing_creator on oikeasti userId) */
 function isUuid(v: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
     v.trim()
   );
 }
 
-/** Laskee rating_count & avg backendin summary-rakenteesta */
+/**
+ * Normalisoi backendin summary-rakenteen yhteiseen muotoon.
+ * - ratingCount: arvioiden määrä
+ * - avg: keskiarvo (preferoidaan backendin `average`-kenttää jos se löytyy)
+ */
 function computeSummary(
   summary: ListingRatingSummary | UserRatingSummary | null
 ): { ratingCount: number; avg: number } {
@@ -53,10 +58,12 @@ function computeSummary(
 
   if (ratingCount === 0) return { ratingCount: 0, avg: 0 };
 
+  // Jos backend antaa valmiin keskiarvon, käytetään sitä
   if (average !== null && average !== undefined) {
     return { ratingCount, avg: average };
   }
 
+  // Fallback: lasketaan keskiarvo tähtijakaumasta
   const totalStars =
     star1 * 1 + star2 * 2 + star3 * 3 + star4 * 4 + star5 * 5;
   const avg = totalStars / ratingCount;
@@ -68,18 +75,23 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
   const { t, lang } = useI18n();
   const { email, token } = useAuth();
 
+  // Kurssin (listing) arvioiden tila
   const [listingSummary, setListingSummary] =
     useState<ListingRatingSummary | null>(null);
   const [listingRatings, setListingRatings] = useState<ListingRatingEntry[]>([]);
+
+  // Vetäjän (user) arvioiden tila
   const [userSummary, setUserSummary] = useState<UserRatingSummary | null>(null);
   const [userRatings, setUserRatings] = useState<UserRatingEntry[]>([]);
+
+  // Yleinen lataus / virhe tila datan hakemiseen
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // ✅ Vetäjän nimi (haetaan users/:id)
+  // Vetäjän nimen näyttö (haetaan users/:id jos mahdollista)
   const [organizerDisplayName, setOrganizerDisplayName] = useState<string>("");
 
-  // Report-form
+  // Raporttilomakkeen tila
   const [reportOpen, setReportOpen] = useState(false);
   const [reportReason, setReportReason] = useState("");
   const [reportDetails, setReportDetails] = useState("");
@@ -90,21 +102,28 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
   const locale = lang === "fi" ? "fi-FI" : "en-GB";
 
   /**
-   * listing_creator on nyt tarkoituksella käyttäjän UUID.
+   * listing_creator on projektissa sovittu olevan käyttäjän UUID.
+   * Jos se ei ole UUID (tai puuttuu), vetäjää ei voi arvioida user-rating -puolella.
    */
   const organizerIdRaw = service?.listing_creator ?? "";
   const organizerId = isUuid(organizerIdRaw) ? organizerIdRaw : "";
 
-  // fallback jos profiilia ei saada haettua
+  // Pidetään UI järkevänä heti modalin auetessa:
+  // näytetään service_provider nimikenttänä, vaikka user-profiili ei vielä olisi ladattu.
   useEffect(() => {
     if (!service) {
       setOrganizerDisplayName("");
       return;
     }
-    // näytä mieluummin service_provider kuin UUID
     setOrganizerDisplayName(service.service_provider || "");
   }, [service?.id]);
 
+  /**
+   * Hakee kaiken modalissa tarvittavan datan:
+   * - kurssin summary + arviot
+   * - vetäjän nimi (jos organizerId on UUID)
+   * - vetäjän summary + arviot
+   */
   async function loadAll() {
     if (!service) {
       setListingSummary(null);
@@ -117,7 +136,10 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
 
     setLoading(true);
     setErr(null);
+
     try {
+      // Kurssin arviot: summary + entries
+      // catch-fallbackit pitää UI:n toimivana vaikka osa endpointista failaa.
       const [ls, le] = await Promise.all([
         getListingSummary(service.id).catch(() => null),
         getListingRatings(service.id).catch(() => []),
@@ -126,26 +148,28 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
       setListingSummary(ls);
       setListingRatings(le);
 
-      // ✅ Hae vetäjän nimi + arviot vain jos organizerId on UUID
+      // Vetäjän tiedot ja arviot haetaan vain jos organizerId on validi UUID
       if (organizerId) {
-        // nimi
+        // Vetäjän nimi (users/:id)
         try {
           const prof = await getUserProfileById(organizerId);
           const full = `${prof.firstname ?? ""} ${prof.surname ?? ""}`.trim();
           setOrganizerDisplayName(full || service.service_provider || "Vetäjä");
         } catch {
-          // jos /users/:id ei ole sallittu ilman authia tms.
+          // Jos profiilin haku ei onnistu (oikeudet tms.), käytetään service_provideria
           setOrganizerDisplayName(service.service_provider || "Vetäjä");
         }
 
-        // arviot + summary
+        // Vetäjän rating summary + entries
         const [us, ue] = await Promise.all([
           getUserSummary(organizerId).catch(() => null),
           getUserRatings(organizerId).catch(() => []),
         ]);
+
         setUserSummary(us);
         setUserRatings(ue);
       } else {
+        // Ei kelvollista organizerId:tä -> ei user-rating dataa
         setUserSummary(null);
         setUserRatings([]);
         setOrganizerDisplayName(service.service_provider || "Vetäjä");
@@ -157,11 +181,13 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
     }
   }
 
+  // Ladataan data aina kun modalin service vaihtuu (tai organizerId muuttuu)
   useEffect(() => {
     void loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [service?.id, organizerId]);
 
+  // Kurssin arvostelut uusimmat ensin (memo, ettei sort pyöri turhaan joka renderillä)
   const sortedListingRatings = useMemo(
     () =>
       [...listingRatings].sort(
@@ -170,17 +196,20 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
     [listingRatings]
   );
 
+  // Summaryt UI:lle helpompaan muotoon
   const { ratingCount: listingRatingCount, avg: listingAvg } =
     computeSummary(listingSummary);
   const { ratingCount: userRatingCount, avg: userAvg } =
     computeSummary(userSummary);
 
+  // Derivoidut tekstit UI:ta varten
   const dateText = service?.datetime
     ? new Date(service.datetime).toLocaleDateString(locale)
     : t("course.timeTBA");
 
   const priceText = service?.price?.trim() || t("course.free");
 
+  // Päätellään onko kurssi online (location on http/https URL)
   const isOnline = (() => {
     if (!service?.location) return false;
     try {
@@ -191,12 +220,19 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
     }
   })();
 
-  const modeText = isOnline ? t("course.mode.online") : t("course.mode.inperson");
+  const modeText = isOnline
+    ? t("course.mode.online")
+    : t("course.mode.inperson");
+
   const img = service?.image || "https://placehold.co/1200x675?text=Kuva";
 
+  // Raportointi vaatii kirjautumisen (token)
   const canReport = !!token;
-  const canRateOrganizer = !!organizerId; // FeedbackForm hoitaa login-pakon
 
+  // Vetäjän arviointi vaatii kelvollisen organizerId:n (FeedbackForm hoitaa login-pakon)
+  const canRateOrganizer = !!organizerId;
+
+  /** Lähettää raportin kyseisestä kurssista */
   const onSendReport = async () => {
     if (!token) {
       setReportError(t("report.loginRequired"));
@@ -211,6 +247,7 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
     setReportSending(true);
     setReportError(null);
     setReportDone(false);
+
     try {
       await createReport({
         target_type: "service",
@@ -218,6 +255,7 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
         reason: reportReason.trim(),
         details: reportDetails.trim() || undefined,
       });
+
       setReportDone(true);
       setReportReason("");
       setReportDetails("");
@@ -228,6 +266,7 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
     }
   };
 
+  // Modalin sisältö: jos service puuttuu, näytetään virhe/placeholder
   const body = !service ? (
     <div className="text-sm text-neutral-500">
       {t("common.error") ?? "Kurssia ei löytynyt."}
@@ -248,7 +287,9 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
         <div className="p-4 space-y-3">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h2 className="text-lg font-semibold leading-tight">{service.name}</h2>
+              <h2 className="text-lg font-semibold leading-tight">
+                {service.name}
+              </h2>
               <div className="text-xs text-neutral-600 flex flex-wrap gap-2 mt-1">
                 <span>{service.service_provider}</span>
                 <span>•</span>
@@ -263,9 +304,13 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
               {modeText}
             </span>
           </div>
+
           <p className="text-sm text-neutral-800">{service.description}</p>
+
           <div className="flex items-center justify-between pt-1">
             <div className="text-lg font-semibold">{priceText}</div>
+
+            {/* Edit-linkki (oikeuksien rajoitus kannattaa tehdä erikseen, esim. backend/route-guard) */}
             <Link
               to={`/edit/${service.id}`}
               className="rounded-xl px-3 py-1.5 border bg-emerald-600 text-white text-xs hover:opacity-90"
@@ -276,12 +321,14 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
         </div>
       </div>
 
+      {/* Datahakuvirhe */}
       {err && (
         <div className="rounded-xl border bg-red-50 text-red-700 p-2 text-sm">
           {err}
         </div>
       )}
 
+      {/* Datahaku käynnissä */}
       {loading && (
         <div className="text-sm text-neutral-500">Ladataan palautteita…</div>
       )}
@@ -289,7 +336,11 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
       {/* Kurssin palaute */}
       <section className="rounded-2xl border p-3 space-y-2">
         <div className="flex items-center justify-between gap-2">
-          <div className="font-semibold text-sm">{t("feedback.courseSectionTitle")}</div>
+          <div className="font-semibold text-sm">
+            {t("feedback.courseSectionTitle")}
+          </div>
+
+          {/* Yhteenveto näytetään vain jos arvioita on */}
           {listingRatingCount > 0 && (
             <div className="flex items-center gap-2 text-xs text-amber-700">
               <span>{starsLine(listingAvg)}</span>
@@ -300,22 +351,34 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
           )}
         </div>
 
+        {/* Lomake lähettää palautteen kurssille */}
         <FeedbackForm
-          target={{ kind: "listing", listingId: service.id, listingName: service.name }}
+          target={{
+            kind: "listing",
+            listingId: service.id,
+            listingName: service.name,
+          }}
+          // Päivitetään datat lähetyksen jälkeen
           onSubmitted={loadAll}
         />
 
+        {/* Arvostelulista (scrollattava) */}
         {sortedListingRatings.length > 0 && (
           <div className="mt-3 space-y-2 max-h-60 overflow-y-auto">
             {sortedListingRatings.map((r) => (
-              <div key={r.id} className="border rounded-xl p-2 text-xs bg-neutral-50">
+              <div
+                key={r.id}
+                className="border rounded-xl p-2 text-xs bg-neutral-50"
+              >
                 <div className="flex items-center justify-between gap-2">
                   <div className="font-semibold">{starsLine(r.stars)}</div>
                   <div className="text-[10px] text-neutral-500">
                     {new Date(r.created).toLocaleDateString(locale)}
                   </div>
                 </div>
-                {r.feedback && <p className="mt-1 text-neutral-700">{r.feedback}</p>}
+                {r.feedback && (
+                  <p className="mt-1 text-neutral-700">{r.feedback}</p>
+                )}
               </div>
             ))}
           </div>
@@ -330,6 +393,7 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
             {organizerDisplayName || "Vetäjä"}
           </div>
 
+          {/* Näytetään yhteenveto vain jos vetäjää voidaan arvioida ja arvioita löytyy */}
           {canRateOrganizer && userRatingCount > 0 && (
             <div className="flex items-center gap-2 text-xs text-amber-700">
               <span>{starsLine(userAvg)}</span>
@@ -340,6 +404,7 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
           )}
         </div>
 
+        {/* Jos organizerId ei ole UUID, ei pystytä kohdistamaan user-rating endpointteihin */}
         {!canRateOrganizer ? (
           <div className="text-xs text-neutral-500">
             Vetäjää ei voi arvioida tällä hetkellä (listing_creator ei ole UUID).
@@ -347,7 +412,11 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
         ) : (
           <>
             <FeedbackForm
-              target={{ kind: "user", userId: organizerId, userName: organizerDisplayName }}
+              target={{
+                kind: "user",
+                userId: organizerId,
+                userName: organizerDisplayName,
+              }}
               onSubmitted={loadAll}
             />
 
@@ -357,17 +426,23 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
                   .slice()
                   .sort(
                     (a, b) =>
-                      new Date(b.created).getTime() - new Date(a.created).getTime()
+                      new Date(b.created).getTime() -
+                      new Date(a.created).getTime()
                   )
                   .map((r) => (
-                    <div key={r.id} className="border rounded-xl p-2 text-xs bg-neutral-50">
+                    <div
+                      key={r.id}
+                      className="border rounded-xl p-2 text-xs bg-neutral-50"
+                    >
                       <div className="flex items-center justify-between gap-2">
                         <div className="font-semibold">{starsLine(r.stars)}</div>
                         <div className="text-[10px] text-neutral-500">
                           {new Date(r.created).toLocaleDateString(locale)}
                         </div>
                       </div>
-                      {r.feedback && <p className="mt-1 text-neutral-700">{r.feedback}</p>}
+                      {r.feedback && (
+                        <p className="mt-1 text-neutral-700">{r.feedback}</p>
+                      )}
                     </div>
                   ))}
               </div>
@@ -380,9 +455,14 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
       <section className="rounded-2xl border p-3 space-y-2">
         <div className="flex items-center justify-between gap-2">
           <div className="font-semibold text-sm">{t("report.sectionTitle")}</div>
-          {!email && <div className="text-xs text-neutral-500">{t("report.loginHint")}</div>}
+          {!email && (
+            <div className="text-xs text-neutral-500">
+              {t("report.loginHint")}
+            </div>
+          )}
         </div>
 
+        {/* Raporttilomake togglataan auki/kiinni */}
         <button
           type="button"
           disabled={!canReport}
@@ -406,7 +486,11 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
               value={reportDetails}
               onChange={(e) => setReportDetails(e.target.value)}
             />
-            {reportError && <div className="text-xs text-red-600">{reportError}</div>}
+
+            {reportError && (
+              <div className="text-xs text-red-600">{reportError}</div>
+            )}
+
             <div className="flex items-center gap-2">
               <button
                 type="button"
@@ -416,16 +500,24 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
               >
                 {reportSending ? t("report.sending") : t("report.send")}
               </button>
+
               {reportDone && (
-                <span className="text-xs text-emerald-600">{t("report.thanks")}</span>
+                <span className="text-xs text-emerald-600">
+                  {t("report.thanks")}
+                </span>
               )}
             </div>
           </div>
         )}
       </section>
 
+      {/* Sulje */}
       <div className="flex justify-end gap-2">
-        <button type="button" onClick={onClose} className="rounded-xl px-3 py-1.5 border text-sm">
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-xl px-3 py-1.5 border text-sm"
+        >
           {t("common.close")}
         </button>
       </div>
@@ -433,6 +525,7 @@ export default function ServiceDetailModal({ service, onClose }: Props) {
   );
 
   return (
+    // Modal auki kun service != null
     <Modal open={!!service} onClose={onClose} title={service?.name ?? "Tiedot"}>
       {body}
     </Modal>

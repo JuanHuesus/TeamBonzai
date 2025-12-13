@@ -6,14 +6,33 @@ import ServiceDetailModal from "../features/services/ServiceDetailModal";
 import { useI18n } from "../i18n";
 import { toMessage } from "../lib/error";
 
+/**
+ * Home = etusivu.
+ * Näyttää:
+ * - hero-alueen (otsikko, nappulat, tilastot)
+ * - tulevien tapahtumien “marquee” -listan (liukuva rivi)
+ * - “featured”/suositellut kurssit (max 6)
+ * - ServiceDetailModalin, kun käyttäjä klikkaa kurssia
+ */
 export default function Home() {
+  // items = kaikki kurssit backendistä (null = ei vielä ladattu)
   const [items, setItems] = useState<ListedService[] | null>(null);
+
+  // virheviesti jos haku epäonnistuu
   const [error, setError] = useState<string | null>(null);
+
+  // detail = se kurssi, jonka detail-modaali on auki (null = modaali kiinni)
   const [detail, setDetail] = useState<ListedService | null>(null);
+
+  // marqueePaused = pysäytetään liukuvan listan animaatio kun käyttäjä hoveraa/touchaa
   const [marqueePaused, setMarqueePaused] = useState(false);
 
   const { t, lang } = useI18n();
 
+  /**
+   * useEffect([]) = ajetaan kerran kun sivu avautuu.
+   * Haetaan kaikki kurssit backendistä ja tallennetaan stateen.
+   */
   useEffect(() => {
     (async () => {
       try {
@@ -26,9 +45,19 @@ export default function Home() {
     })();
   }, []);
 
+  // Nykyhetki (ms aikaleima) tapahtumien suodatukseen
   const now = Date.now();
+
+  // Jos items on null, käytetään tyhjää listaa ettei koodi kaadu
   const allCourses = items ?? [];
 
+  /**
+   * upcoming = kaikki tulevat kurssit:
+   * - datetime pitää olla olemassa
+   * - datetime pitää olla validi päivämäärä
+   * - datetime pitää olla nykyhetken jälkeen
+   * Lisäksi sortataan aikajärjestykseen (lähin ensin)
+   */
   const upcoming = allCourses
     .filter(
       (s) =>
@@ -37,23 +66,29 @@ export default function Home() {
         new Date(s.datetime).getTime() >= now
     )
     .sort(
-      (a, b) =>
-        new Date(a.datetime!).getTime() - new Date(b.datetime!).getTime()
+      (a, b) => new Date(a.datetime!).getTime() - new Date(b.datetime!).getTime()
     );
 
-  // rajataan max 10 kurssiin ja duplikoidaan → saumaton looppi
+  /**
+   * Marquee näyttää maksimissaan 10 tulevaa tapahtumaa.
+   * “Duplikoidaan lista” (A+B), jotta saadaan saumaton looppi-efekti animaatioon.
+   */
   const upcomingToShow = upcoming.slice(0, 10);
   const loopedUpcoming = [...upcomingToShow, ...upcomingToShow];
 
+  // Päivämäärän muoto kielestä riippuen
   const locale = lang === "fi" ? "fi-FI" : "en-GB";
 
-  // Etusivun "nostot": max 6 kurssia omalla korttityylillä
-  const featuredCourses = useMemo(
-    () => allCourses.slice(0, 6),
-    [allCourses]
-  );
+  /**
+   * Featured-kurssit: etusivulla nostetaan esiin max 6 kurssia.
+   * useMemo: laskenta tehdään uudestaan vain kun allCourses muuttuu.
+   */
+  const featuredCourses = useMemo(() => allCourses.slice(0, 6), [allCourses]);
 
-  // Yksinkertaiset statit hero-alueelle
+  /**
+   * providerCount: montako uniikkia service_provider -nimeä löytyy.
+   * useMemo: ei lasketa uudelleen joka renderillä turhaan.
+   */
   const providerCount = useMemo(() => {
     const set = new Set(
       allCourses
@@ -69,11 +104,10 @@ export default function Home() {
       <section className="home-hero-layout">
         {/* Hero-teksti + statit */}
         <div className="home-hero-text">
-          {/* poistettu badge */}
-
           <h1 className="home-hero-title">{t("hero.title")}</h1>
           <p className="home-hero-subtitle">{t("hero.subtitle")}</p>
 
+          {/* CTA-napit */}
           <div className="home-hero-actions">
             <Link to="/courses" className="btn-primary">
               {t("home.viewAllCourses")}
@@ -83,28 +117,22 @@ export default function Home() {
             </Link>
           </div>
 
-          {/* Pienet statit tekevät etusivusta erilaisen kuin listaus */}
+          {/* Statit: kurssien määrä, tulevien määrä, vetäjien määrä */}
           <div className="home-hero-stats">
             <div className="home-hero-stat-item">
-              <div className="home-hero-stat-number">
-                {allCourses.length}
-              </div>
-              <div className="home-hero-stat-label">
-                {t("home.statCourses")}
-              </div>
+              <div className="home-hero-stat-number">{allCourses.length}</div>
+              <div className="home-hero-stat-label">{t("home.statCourses")}</div>
             </div>
+
             <div className="home-hero-stat-item">
-              <div className="home-hero-stat-number">
-                {upcoming.length}
-              </div>
+              <div className="home-hero-stat-number">{upcoming.length}</div>
               <div className="home-hero-stat-label">
                 {t("home.statUpcoming")}
               </div>
             </div>
+
             <div className="home-hero-stat-item">
-              <div className="home-hero-stat-number">
-                {providerCount}
-              </div>
+              <div className="home-hero-stat-number">{providerCount}</div>
               <div className="home-hero-stat-label">
                 {t("home.statProviders")}
               </div>
@@ -112,23 +140,21 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Tulevat tapahtumat -looppi */}
+        {/* Tulevat tapahtumat (marquee/looppi) */}
         <div className="surface-card home-upcoming-card">
           <div className="home-upcoming-header">
-            <h2 className="home-upcoming-title">
-              {t("home.upcomingTitle")}
-            </h2>
+            <h2 className="home-upcoming-title">{t("home.upcomingTitle")}</h2>
             <div className="home-upcoming-count">
-              <span className="home-upcoming-count-number">
-                {upcoming.length}
-              </span>
+              <span className="home-upcoming-count-number">{upcoming.length}</span>
               <span>{t("home.upcomingCountShort")}</span>
             </div>
           </div>
 
+          {/* Jos löytyy tulevia, näytetään liukuva lista. Muuten placeholder. */}
           {loopedUpcoming.length > 0 ? (
             <div
               className="upcoming-marquee"
+              // Hover/touch pysäyttää animaation (helpottaa klikkaamista)
               onMouseEnter={() => setMarqueePaused(true)}
               onMouseLeave={() => setMarqueePaused(false)}
               onTouchStart={() => setMarqueePaused(true)}
@@ -136,11 +162,11 @@ export default function Home() {
             >
               <div
                 className={
-                  "upcoming-marquee-track" +
-                  (marqueePaused ? " is-paused" : "")
+                  "upcoming-marquee-track" + (marqueePaused ? " is-paused" : "")
                 }
               >
                 {loopedUpcoming.map((s, idx) => (
+                  // Button: klikkaamalla avataan detail-modaali (setDetail)
                   <button
                     key={`${s.id}-${idx}`}
                     type="button"
@@ -161,9 +187,7 @@ export default function Home() {
                     <div className="upcoming-card-body">
                       <div className="upcoming-card-date">
                         {s.datetime
-                          ? new Date(s.datetime).toLocaleDateString(
-                              locale
-                            )
+                          ? new Date(s.datetime).toLocaleDateString(locale)
                           : t("course.timeTBA")}
                       </div>
                       <div className="upcoming-card-title">{s.name}</div>
@@ -177,38 +201,33 @@ export default function Home() {
             </div>
           ) : (
             <div className="upcoming-marquee">
-              <div className="upcoming-card-date">
-                {t("services.noPreview")}
-              </div>
+              <div className="upcoming-card-date">{t("services.noPreview")}</div>
             </div>
           )}
         </div>
       </section>
 
-      {/* Kurssinostot – eri tyyli kuin varsinainen kurssilistaus */}
+      {/* Kurssinostot (featured) */}
       <section className="home-courses-section">
         <div className="home-courses-header">
           <div>
-            <h2 className="home-courses-title">
-              {t("home.popularTitle")}
-            </h2>
-            <p className="home-courses-subtitle">
-              {t("home.popularSubtitle")}
-            </p>
+            <h2 className="home-courses-title">{t("home.popularTitle")}</h2>
+            <p className="home-courses-subtitle">{t("home.popularSubtitle")}</p>
           </div>
           <Link to="/courses" className="btn-secondary">
             {t("home.viewAllCourses")}
           </Link>
         </div>
 
+        {/* Virheviesti */}
         {error && <div className="error-banner">{error}</div>}
 
+        {/* Lataustila: items on null ja ei virhettä */}
         {!items && !error && (
-          <div className="upcoming-card-date">
-            {t("services.loading")}
-          </div>
+          <div className="upcoming-card-date">{t("services.loading")}</div>
         )}
 
+        {/* Featured-grid: klikkaus avaa modalin */}
         <div className="home-courses-grid">
           {featuredCourses.map((s) => (
             <button
@@ -219,15 +238,11 @@ export default function Home() {
             >
               <div className="home-course-image-wrapper">
                 <img
-                  src={
-                    s.image ||
-                    "https://placehold.co/800x450?text=Kuva"
-                  }
+                  src={s.image || "https://placehold.co/800x450?text=Kuva"}
                   alt=""
                   className="home-course-image"
                   onError={(e) => {
-                    e.currentTarget.src =
-                      "https://placehold.co/800x450?text=Kuva";
+                    e.currentTarget.src = "https://placehold.co/800x450?text=Kuva";
                   }}
                 />
               </div>
@@ -238,30 +253,23 @@ export default function Home() {
                     : t("course.timeTBA")}
                 </div>
                 <div className="home-course-title">{s.name}</div>
-                <div className="home-course-provider">
-                  {s.service_provider}
-                </div>
+                <div className="home-course-provider">{s.service_provider}</div>
                 {s.location && (
-                  <div className="home-course-meta">
-                    {s.location}
-                  </div>
+                  <div className="home-course-meta">{s.location}</div>
                 )}
               </div>
             </button>
           ))}
 
+          {/* Jos ei featured-kursseja mutta data on ladattu */}
           {featuredCourses.length === 0 && items && (
-            <div className="upcoming-card-date">
-              {t("services.noPreview")}
-            </div>
+            <div className="upcoming-card-date">{t("services.noPreview")}</div>
           )}
         </div>
       </section>
 
-      <ServiceDetailModal
-        service={detail}
-        onClose={() => setDetail(null)}
-      />
+      {/* Detail-modaali: näkyy kun detail != null */}
+      <ServiceDetailModal service={detail} onClose={() => setDetail(null)} />
     </main>
   );
 }

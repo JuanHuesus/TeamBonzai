@@ -1,13 +1,23 @@
-import { useEffect, useMemo, useState } from "react";
-import { listServices } from "../features/services/api.services";
-import type { ListedService } from "../types";
-import ServiceCard from "../features/services/ServiceCard";
-import Modal from "../ui/Modal";
-import { Link } from "react-router-dom";
-import { toMessage } from "../lib/error";
-import { useI18n } from "../i18n";
-import ServiceDetailModal from "../features/services/ServiceDetailModal";
+// ServicesList.tsx
+// Listaussivu: hakee kaikki palvelut/kurssit backendistä ja antaa käyttäjälle
+// paljon “frontend-suodattimia” (haku, kategoriat, tyyppi, etä/lähi, aikaväli, hinta,
+// sekä teemaan perustuvat facetit). Klikistä avautuu detail-modal.
 
+import { useEffect, useMemo, useState } from "react"; // React hookit: datahaku, tila, johdetut arvot
+import { listServices } from "../features/services/api.services"; // API: hae palvelulista backendistä
+import type { ListedService } from "../types"; // TS-tyyppi yksittäiselle listaukselle
+import ServiceCard from "../features/services/ServiceCard"; // UI-komponentti yhden palvelun kortille
+import Modal from "../ui/Modal"; // yleinen modal-komponentti (lisäsuodattimet)
+import { Link } from "react-router-dom"; // reitityslinkit
+import { toMessage } from "../lib/error"; // virheen muunto luettavaksi
+import { useI18n } from "../i18n"; // käännökset + kieli
+import ServiceDetailModal from "../features/services/ServiceDetailModal"; // modal, joka näyttää yhden palvelun tarkemmin
+
+// ------------------------------------------------------------
+// APUTOIMINNOT (käytetään filttereissä)
+// ------------------------------------------------------------
+
+/** Tulkitaan "online" jos location on http/https-URL */
 function isOnline(location: string | null | undefined) {
   if (!location) return false;
   try {
@@ -18,6 +28,7 @@ function isOnline(location: string | null | undefined) {
   }
 }
 
+/** Parsii hinnan euroiksi tekstistä, esim. "€29", "29,90", "29.90" -> 29.9 */
 function parsePriceEUR(p: string | null | undefined): number | null {
   if (!p) return null;
   const num = p.replace(/[^\d,.]/g, "").replace(",", ".");
@@ -25,6 +36,8 @@ function parsePriceEUR(p: string | null | undefined): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+// Kesto-bucketit on valmiina, mutta kestoa ei vielä ole datassa.
+// Eli tätä ei oikeasti käytetä filttereissä (placeholder).
 const DURATION_BUCKETS = [
   { key: "le60", label: "≤ 60 min", match: (m: number) => m <= 60 },
   { key: "1to3h", label: "1–3 h", match: (m: number) => m > 60 && m <= 180 },
@@ -32,6 +45,8 @@ const DURATION_BUCKETS = [
   { key: "multiday", label: "> 8 h / useampi päivä", match: (m: number) => m > 480 },
 ] as const;
 
+// “Facet”-suodattimet: nämä ovat UI:ssa valmiina listoja,
+// ja deriveFacets yrittää päätellä facetit tekstistä (heuristiikka).
 const FACETS = {
   crafts: {
     label: "Kurssin teema",
@@ -74,7 +89,12 @@ const FACETS = {
 
 type ModeFilter = "all" | "online" | "inperson";
 
+/**
+ * deriveFacets: tekee “teko-facetit” etsimällä avainsanoja tekstistä.
+ * Tämä ei tule backendistä, vaan on frontin heuristiikka.
+ */
 function deriveFacets(s: ListedService) {
+  // kerätään relevantit tekstikentät yhteen “hakutekstiksi”
   const txt = [
     s.name,
     s.description,
@@ -89,6 +109,7 @@ function deriveFacets(s: ListedService) {
 
   const hasAny = (words: string[]) => words.some((w) => txt.includes(w));
 
+  // Teema
   const theme: string[] = [];
   if (hasAny(["arki", "helppo", "nopea", "meal prep"])) theme.push("Arjen kokkaus");
   if (hasAny(["leivo", "leivon", "leivonta", "bake", "baking"])) theme.push("Leivonta");
@@ -99,6 +120,7 @@ function deriveFacets(s: ListedService) {
   if (hasAny(["jälkiruoka", "dessert", "makea", "sweet"]))
     theme.push("Jälkiruoat");
 
+  // Keittiötyyli
   const cuisine: string[] = [];
   if (hasAny(["suomi", "lapp", "karjal"])) cuisine.push("Suomalainen");
   if (hasAny(["italia", "pasta", "pizza"])) cuisine.push("Italialainen");
@@ -108,6 +130,7 @@ function deriveFacets(s: ListedService) {
   if (hasAny(["street", "burger", "taco"])) cuisine.push("Street food");
   if (hasAny(["fine dining", "fine-dining", "degust"])) cuisine.push("Fine dining");
 
+  // Ruokavalio
   const diet: string[] = [];
   if (hasAny(["vegaan", "vegan"])) diet.push("Vegaani");
   if (hasAny(["kasvis", "vegetarian"])) diet.push("Kasvis");
@@ -116,72 +139,97 @@ function deriveFacets(s: ListedService) {
   if (hasAny(["maitoproteiini", "dairy free"])) diet.push("Maitoproteiiniton");
   if (hasAny(["sokeriton", "sugar free"])) diet.push("Sokeriton");
 
+  // Palautetaan muodossa, jota filtteröinti käyttää
   return { craft: theme, code: cuisine, instrument: diet };
 }
 
+/**
+ * Ryhmäkokoluokka attendee_limit-kentästä.
+ * - "unlimited" => suuri ryhmä
+ * - 1 => yksityistunti
+ * - 2–10 => pieni ryhmä
+ * - 11+ => suuri ryhmä
+ */
 function groupLabel(
   attendee_limit: string | null | undefined
 ): "Yksityistunti" | "Pieni ryhmä" | "Suuri ryhmä" {
   const limitStr = (attendee_limit ?? "").toLowerCase();
   if (limitStr === "unlimited") return "Suuri ryhmä";
   const n = Number(limitStr);
-  if (!Number.isFinite(n)) return "Pieni ryhmä";
+  if (!Number.isFinite(n)) return "Pieni ryhmä"; // jos arvo ei ole numero, oletetaan pieni ryhmä
   if (n <= 1) return "Yksityistunti";
   if (n <= 10) return "Pieni ryhmä";
   return "Suuri ryhmä";
 }
 
 export default function ServicesList() {
+  // items: null = ei vielä ladattu, [] = ladattu mutta tyhjä
   const [items, setItems] = useState<ListedService[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const [q, setQ] = useState("");
-  const [category, setCategory] = useState<string>("all");
-  const [type, setType] = useState<string>("all");
+  // Perusfiltterit
+  const [q, setQ] = useState(""); // hakuteksti
+  const [category, setCategory] = useState<string>("all"); // kategoria
+  const [type, setType] = useState<string>("all"); // tyyppi
 
-  const [mode, setMode] = useState<ModeFilter>("all");
-  const [dateFrom, setDateFrom] = useState<string>("");
-  const [dateTo, setDateTo] = useState<string>("");
-  const [maxPrice, setMaxPrice] = useState<string>("");
+  // Lisäfiltterit
+  const [mode, setMode] = useState<ModeFilter>("all"); // online/inperson
+  const [dateFrom, setDateFrom] = useState<string>(""); // YYYY-MM-DD
+  const [dateTo, setDateTo] = useState<string>(""); // YYYY-MM-DD
+  const [maxPrice, setMaxPrice] = useState<string>(""); // numero tekstinä inputista
 
+  // Facet-valinnat (checkbox-listat)
   const [fDuration, setFDuration] = useState<string[]>([]);
   const [fGroupSize, setFGroupSize] = useState<string[]>([]);
   const [fCrafts, setFCrafts] = useState<string[]>([]);
   const [fCode, setFCode] = useState<string[]>([]);
   const [fInstr, setFInstr] = useState<string[]>([]);
 
+  // UI-tilat: lisäsuodatinmodal + detail-modal
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [detail, setDetail] = useState<ListedService | null>(null);
 
+  // i18n ja locale päivämääräformaatteihin
   const { t, lang } = useI18n();
   const locale = lang === "fi" ? "fi-FI" : "en-GB";
 
+  // ------------------------------------------------------------
+  // Datahaku backendistä
+  // ------------------------------------------------------------
   async function load() {
     setError(null);
     try {
-      const data = await listServices({});
+      const data = await listServices({}); // API: hae kaikki palvelut (tyhjä query tässä)
       setItems(data);
     } catch (e: unknown) {
       setError(toMessage(e));
     }
   }
 
+  // Ladataan kerran sivun mountissa
   useEffect(() => {
     void load();
   }, []);
 
+  // ------------------------------------------------------------
+  // Dropdowneihin dynaamiset arvot datasta
+  // ------------------------------------------------------------
+
+  // categories: uniikit kategoriat listauksista
   const categories = useMemo(() => {
     const set = new Set<string>();
     (items ?? []).forEach((s) => s.service_category && set.add(s.service_category));
     return Array.from(set);
   }, [items]);
 
+  // types: uniikit service_typet listauksista
   const types = useMemo(() => {
     const set = new Set<string>();
     (items ?? []).forEach((s) => s.service_type && set.add(s.service_type));
     return Array.from(set);
   }, [items]);
 
+  // Tämä lasketaan “badgea” varten: montako lisäsuodatinta on päällä
   const totalExtraSelected =
     fDuration.length +
     fGroupSize.length +
@@ -193,19 +241,30 @@ export default function ServicesList() {
     (dateTo ? 1 : 0) +
     (maxPrice ? 1 : 0);
 
+  // Yleinen checkbox-toggle: lisää/poista arvo listasta
   function toggle(list: string[], setter: (v: string[]) => void, value: string) {
     setter(list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
   }
 
+  // ------------------------------------------------------------
+  // Frontend-filtteröinti (ei tehdä backend queryllä)
+  // ------------------------------------------------------------
   const locallyFiltered = useMemo(() => {
     if (!items) return null;
 
+    // Esikäsittely: jotta filter ei tee samaa työtä joka itemille
     const qLower = q.trim().toLowerCase();
+
+    // Päivämäärärajojen timestampit
     const fromTs = dateFrom ? new Date(dateFrom + "T00:00:00Z").getTime() : null;
     const toTs = dateTo ? new Date(dateTo + "T23:59:59Z").getTime() : null;
+
+    // Maxhinta numeroksi (tai null jos tyhjä)
     const maxPriceNum = maxPrice ? Number(maxPrice) : null;
 
+    // Varsinainen suodatus
     return items.filter((s) => {
+      // 1) Tekstihaku: etsitään yhdistetystä tekstistä
       if (qLower) {
         const hay = [
           s.name,
@@ -218,9 +277,11 @@ export default function ServicesList() {
           .filter(Boolean)
           .join(" ")
           .toLowerCase();
+
         if (!hay.includes(qLower)) return false;
       }
 
+      // 2) Kategoriafiltteri
       if (
         category !== "all" &&
         (s.service_category ?? "").toLowerCase() !== category.toLowerCase()
@@ -228,6 +289,7 @@ export default function ServicesList() {
         return false;
       }
 
+      // 3) Tyyppifiltteri
       if (
         type !== "all" &&
         (s.service_type ?? "").toLowerCase() !== type.toLowerCase()
@@ -235,9 +297,11 @@ export default function ServicesList() {
         return false;
       }
 
+      // 4) Online/lähi-filtteri
       const m: ModeFilter = isOnline(s.location) ? "online" : "inperson";
       if (mode !== "all" && m !== mode) return false;
 
+      // 5) Päivämääräväli: jos rajat käytössä, listauksella pitää olla datetime
       if (fromTs || toTs) {
         if (!s.datetime) return false;
         const ts = new Date(s.datetime).getTime();
@@ -245,21 +309,27 @@ export default function ServicesList() {
         if (toTs && ts > toTs) return false;
       }
 
+      // 6) Hinta: jos maxPrice annettu, parsitaan euroiksi ja verrataan
       if (maxPriceNum !== null) {
         const p = parsePriceEUR(s.price);
+        // Huom: jos hintaa ei saada parsittua (p === null), sitä ei suljeta pois
         if (p !== null && p > maxPriceNum) return false;
       }
 
+      // 7) Ryhmäkoko facet
       const g = groupLabel(s.attendee_limit);
       if (fGroupSize.length && !fGroupSize.includes(g)) return false;
 
+      // 8) Kesto facet: placeholder (datassa ei ole kestoa)
       if (fDuration.length) {
         // kestoa ei vielä datassa – placeholder
       }
 
+      // 9) Tekstistä johdetut facetit (teema/keittiö/ruokavalio)
       const facets = deriveFacets(s);
       const matchesFacet = (selected: string[], values: string[]) =>
         !selected.length || selected.some((x) => values.includes(x));
+
       if (!matchesFacet(fCrafts, facets.craft)) return false;
       if (!matchesFacet(fCode, facets.code)) return false;
       if (!matchesFacet(fInstr, facets.instrument)) return false;
@@ -282,9 +352,12 @@ export default function ServicesList() {
     fInstr,
   ]);
 
+  // ------------------------------------------------------------
+  // UI
+  // ------------------------------------------------------------
   return (
     <main className="min-h-screen bg-white/90">
-      {/* Hero */}
+      {/* Hero: hakukenttä + pikasuodattimet + teaser */}
       <section className="page-shell py-8 md:py-14">
         <div className="grid md:grid-cols-2 gap-8 items-center">
           <div>
@@ -295,6 +368,7 @@ export default function ServicesList() {
               {t("services.heroSubtitle")}
             </p>
 
+            {/* Hakukenttä + nopea suodatus UI */}
             <div className="mt-6 grid gap-3">
               <div className="flex gap-2">
                 <input
@@ -305,6 +379,7 @@ export default function ServicesList() {
                 />
               </div>
 
+              {/* Kategoria-pill buttonit */}
               <div className="flex flex-wrap gap-2">
                 <button
                   className={`rounded-full px-3 py-1 text-sm border transition ${
@@ -331,6 +406,7 @@ export default function ServicesList() {
                 ))}
               </div>
 
+              {/* Dropdownit + lisäsuodattimet */}
               <div className="flex flex-wrap items-center gap-2">
                 <select
                   className="rounded-xl border px-3 py-2 text-sm"
@@ -355,11 +431,13 @@ export default function ServicesList() {
                   <option value="inperson">Lähikurssi</option>
                 </select>
 
+                {/* Avaa lisäsuodatinmodaalin */}
                 <button
                   className="rounded-xl px-3 py-1.5 border"
                   onClick={() => setFiltersOpen(true)}
                 >
                   Lisää filttereitä{" "}
+                  {/* Badge näyttää montako lisäfiltteriä on käytössä */}
                   {totalExtraSelected ? (
                     <span className="ml-1 inline-flex items-center justify-center text-xs rounded-full border px-1.5">
                       {totalExtraSelected}
@@ -367,6 +445,7 @@ export default function ServicesList() {
                   ) : null}
                 </button>
 
+                {/* Resetoi kaikki filtterit */}
                 <button
                   className="text-sm underline opacity-80"
                   onClick={() => {
@@ -390,25 +469,19 @@ export default function ServicesList() {
             </div>
           </div>
 
-          {/* Teaser grid */}
+          {/* Teaser grid: näyttää 4 ekaa filttereiden mukaista listaa “esikatseluna” */}
           <div className="relative">
             <div className="rounded-3xl border bg-white p-4 shadow-sm">
               <div className="grid grid-cols-2 gap-3">
                 {(locallyFiltered ?? []).slice(0, 4).map((s) => (
-                  <div
-                    key={s.id}
-                    className="rounded-2xl overflow-hidden border"
-                  >
+                  <div key={s.id} className="rounded-2xl overflow-hidden border">
                     <img
-                      src={
-                        s.image ||
-                        "https://placehold.co/800x450?text=Kuva"
-                      }
+                      src={s.image || "https://placehold.co/800x450?text=Kuva"}
                       alt=""
                       className="h-28 w-full object-cover"
                       onError={(e) => {
-                        e.currentTarget.src =
-                          "https://placehold.co/800x450?text=Kuva";
+                        // jos kuva ei lataudu, käytetään placeholderia
+                        e.currentTarget.src = "https://placehold.co/800x450?text=Kuva";
                       }}
                     />
                     <div className="p-2">
@@ -423,6 +496,8 @@ export default function ServicesList() {
                     </div>
                   </div>
                 ))}
+
+                {/* Jos ei tuloksia, näytetään fallback-teksti */}
                 {(!locallyFiltered || locallyFiltered.length === 0) && (
                   <div className="text-sm text-neutral-500 p-2">
                     {t("services.noPreview")}
@@ -438,9 +513,10 @@ export default function ServicesList() {
       <section className="page-shell pb-16">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl md:text-2xl font-bold">
-            {t("services.resultsTitle")} (
-            {locallyFiltered ? locallyFiltered.length : 0})
+            {t("services.resultsTitle")} ({locallyFiltered ? locallyFiltered.length : 0})
           </h2>
+
+          {/* Luo uusi listaus */}
           <Link
             to="/new"
             className="rounded-xl px-3 py-1.5 border bg-black text-white"
@@ -449,6 +525,7 @@ export default function ServicesList() {
           </Link>
         </div>
 
+        {/* Virheet + lataus */}
         {error && (
           <div className="mb-4 rounded-xl border bg-red-50 text-red-600 p-3">
             {error}
@@ -456,6 +533,9 @@ export default function ServicesList() {
         )}
         {!items && <div>{t("services.loading")}</div>}
 
+        {/* ServiceCard-listaus.
+           onOpen={setDetail} tarkoittaa: kun kortti haluaa avata detailin,
+           se antaa palvelun tähän stateen -> detail-modal renderöityy. */}
         <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-6">
           {locallyFiltered?.map((s) => (
             <ServiceCard key={s.id} s={s} onOpen={setDetail} />
@@ -463,14 +543,14 @@ export default function ServicesList() {
         </div>
       </section>
 
-      {/* Lisäsuodattimet (ruoka-teeman faceteilla) */}
+      {/* Lisäsuodattimet: oma Modal, jossa checkboxit + date/hinta */}
       <Modal
         open={filtersOpen}
         onClose={() => setFiltersOpen(false)}
         title="Lisäsuodattimet"
       >
-        {/* ... loppu modal-koodi täsmälleen kuten aiemmin ... */}
-        {/* Jätetään sisältö ennalleen (kopioitu aiemmasta) */}
+        {/* Tämä modaalin sisältö on pelkkä UI joka säätää statea.
+           Varsinainen filtteröinti tapahtuu locallyFiltered useMemo:ssa. */}
         <div className="grid md:grid-cols-3 gap-4">
           {/* Päivämäärä */}
           <div className="border rounded-xl p-3">
@@ -564,8 +644,7 @@ export default function ServicesList() {
               ))}
             </div>
             <div className="mt-2 text-xs text-neutral-500">
-              Huom: kestoa ei vielä ole datassa – tämä on valmiina tulevaa
-              varten.
+              Huom: kestoa ei vielä ole datassa – tämä on valmiina tulevaa varten.
             </div>
           </div>
 
@@ -630,6 +709,7 @@ export default function ServicesList() {
           </div>
         </div>
 
+        {/* Modalin alaosa: reset + close */}
         <div className="mt-4 flex items-center justify-end gap-2">
           <button
             className="rounded-xl px-3 py-1.5 border"
@@ -656,7 +736,7 @@ export default function ServicesList() {
         </div>
       </Modal>
 
-      {/* Detail-modal yhteiskomponentilla */}
+      {/* Detail-modal: renderöidään vain kun detail != null */}
       {detail && (
         <ServiceDetailModal
           service={detail}
@@ -666,4 +746,3 @@ export default function ServicesList() {
     </main>
   );
 }
-

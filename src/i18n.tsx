@@ -1,13 +1,24 @@
-import { createContext, useContext, useState, type ReactNode } from "react";
+// i18n.tsx
+// Tämä tiedosto toteuttaa projektin kevyen lokalisaation (FI/EN) ilman erillistä kirjastoa.
+// Idea:
+// - translations-objekti sisältää kaikki tekstit avaimilla (esim. "nav.home")
+// - I18nProvider pitää nykyisen kielen (lang) React Contextissa
+// - useI18n() antaa komponentille t(key), lang ja setLang()
 
+import { createContext, useContext, useState, type ReactNode } from "react"; // Context + state + hookit
+
+// Tuetut kielet (union-tyyppi -> estää typoja)
 type Lang = "fi" | "en";
 
+// Contextin sisältö: mitä muut komponentit saavat
 type I18nCtx = {
-  lang: Lang;
-  setLang: (lang: Lang) => void;
-  t: (key: string) => string;
+  lang: Lang; // nykyinen kieli
+  setLang: (lang: Lang) => void; // vaihda kieli (tallentaa myös localStorageen)
+  t: (key: string) => string; // hae käännös avaimella
 };
 
+// translations = “sanakirja” per kieli.
+// Avain on esim. "nav.home" ja arvo on näytettävä teksti.
 const translations: Record<Lang, Record<string, string>> = {
   fi: {
     "brand.name": "ChefUP",
@@ -23,7 +34,6 @@ const translations: Record<Lang, Record<string, string>> = {
     "nav.moderation": "Moderointi",
     "nav.register": "Luo käyttäjä",
 
-
     // Hero / etusivu
     "hero.title": "Löydä ruoka- ja kokkauskurssit ChefUPista!",
     "hero.subtitle":
@@ -38,8 +48,6 @@ const translations: Record<Lang, Record<string, string>> = {
     "home.statProviders": "Järjestäjää",
 
     "home.popularSubtitle": "Nostoja ChefUPin valikoimasta – kurkkaa muutama esimerkki.",
-
-    
 
     "button.newListing": "Uusi kurssi",
 
@@ -102,7 +110,7 @@ const translations: Record<Lang, Record<string, string>> = {
     "help.termsTitle": "Käyttöehdot (lyhyesti)",
     "help.termsText":
       "Sovellusta käytetään omalla vastuulla. Kursseista ja niiden sisällöstä vastaa aina kurssin järjestäjä.",
-    // Vanha avain jätetään varmuuden vuoksi
+    // “Vanha avain” jätetty yhteensopivuuden vuoksi
     "help.termsBody":
       "Sovellusta käytetään omalla vastuulla. Kursseista ja niiden sisällöstä vastaa aina kurssin järjestäjä.",
 
@@ -142,12 +150,72 @@ const translations: Record<Lang, Record<string, string>> = {
 
     // Moderointi
     "moderation.title": "Moderointi",
-    "moderation.noAccess":
-      "Sinulla ei ole oikeuksia nähdä tätä sivua.",
+    "moderation.noAccess": "Sinulla ei ole oikeuksia nähdä tätä sivua.",
     "moderation.noReports": "Ei avoimia raportteja.",
     "moderation.updating": "Päivitetään…",
     "moderation.markPending": "Merkitse avoimeksi",
     "moderation.markResolved": "Merkitse ratkaistuksi",
+    "moderation.subtitle": "Käsittele käyttäjien tekemät ilmoitukset. Avoimet näkyvät ylhäällä, ratkaistut minimissä.",
+    "moderation.refresh": "Päivitä",
+    "moderation.loading": "Ladataan raportteja…",
+
+    "moderation.searchLabel": "Haku",
+    "moderation.searchPlaceholder": "Hae syyllä, tekstillä, id:llä tai kurssin nimellä…",
+    "moderation.filterLabel": "Suodatus",
+    "moderation.filterAll": "Kaikki",
+    "moderation.filterServices": "Kurssit",
+    "moderation.filterUsers": "Käyttäjät",
+    "moderation.sortLabel": "Järjestys",
+    "moderation.sortNewest": "Uusin ensin",
+    "moderation.sortOldest": "Vanhin ensin",
+
+    "moderation.pending": "Avoimet",
+    "moderation.resolved": "Ratkaistut",
+    "moderation.pendingTitle": "Avoimet raportit",
+    "moderation.resolvedTitle": "Ratkaistut raportit",
+    "moderation.resolvedHint": "Klikkaa auki nähdäksesi listan",
+    "moderation.noReportsFiltered": "Ei raportteja näillä suodattimilla.",
+
+    "moderation.statusPending": "pending",
+    "moderation.statusResolved": "resolved",
+
+    "moderation.reportedCourse": "Raportoitu kurssi",
+    "moderation.reportedUser": "Raportoitu käyttäjä",
+    "moderation.openCourse": "Avaa kurssi",
+    "moderation.courseLoadingName": "Haetaan kurssin nimeä…",
+
+    "moderation.copyId": "Kopioi raportti-ID",
+    "moderation.copyTargetId": "Kopioi kohde-ID",
+    "moderation.copyFailed": "Kopiointi epäonnistui.",
+
+    "moderation.resolutionNotesLabel": "Ratkaisumuistiinpano (valinnainen)",
+    "moderation.resolutionNotesPlaceholder": "Mitä päätettiin / miksi tämä ratkaistiin?",
+    "moderation.resolvedReport": "Ratkaistu raportti",
+    "moderation.openingCourse": "Avataan…",
+    "moderation.courseNotFound": "Kurssia ei löytynyt (id ei ole listassa).",
+
+    // käyttäjät
+    // i18n.tsx – lisää translations.fi:
+    "nav.users": "Käyttäjät",
+
+    "users.title": "Käyttäjät",
+    "users.subtitle": "Selaa käyttäjiä ja avaa julkinen profiili.",
+    "users.searchLabel": "Haku",
+    "users.searchPlaceholder": "Hae nimellä, sähköpostilla tai kuvauksella…",
+    "users.loading": "Ladataan käyttäjiä…",
+    "users.noUsers": "Ei käyttäjiä.",
+    "users.openProfile": "Avaa profiili",
+
+    "user.title": "Käyttäjän profiili",
+    "user.backToUsers": "Takaisin käyttäjälistaan",
+    "user.loading": "Ladataan käyttäjää…",
+    "user.offeredCoursesTitle": "Tarjotut kurssit",
+    "user.loadingCourses": "Ladataan kursseja…",
+    "user.noCourses": "Tällä käyttäjällä ei ole kursseja.",
+
+    "report.userSectionTitle": "Ilmoita käyttäjästä",
+    "report.userIntro": "Teet ilmoituksen käyttäjästä:",
+
 
     // Services / listaus
     "services.heroTitle": "Kaikki ChefUP-kurssit",
@@ -309,6 +377,46 @@ const translations: Record<Lang, Record<string, string>> = {
     "moderation.updating": "Updating…",
     "moderation.markPending": "Mark as pending",
     "moderation.markResolved": "Mark as resolved",
+    "moderation.subtitle": "Handle user reports. Pending items are on top, resolved items are minimized.",
+    "moderation.refresh": "Refresh",
+    "moderation.loading": "Loading reports…",
+
+    "moderation.searchLabel": "Search",
+    "moderation.searchPlaceholder": "Search by reason, text, id or course name…",
+    "moderation.filterLabel": "Filter",
+    "moderation.filterAll": "All",
+    "moderation.filterServices": "Courses",
+    "moderation.filterUsers": "Users",
+    "moderation.sortLabel": "Sort",
+    "moderation.sortNewest": "Newest first",
+    "moderation.sortOldest": "Oldest first",
+
+    "moderation.pending": "Pending",
+    "moderation.resolved": "Resolved",
+    "moderation.pendingTitle": "Pending reports",
+    "moderation.resolvedTitle": "Resolved reports",
+    "moderation.resolvedHint": "Click to expand the list",
+    "moderation.noReportsFiltered": "No reports match these filters.",
+
+    "moderation.statusPending": "pending",
+    "moderation.statusResolved": "resolved",
+
+    "moderation.reportedCourse": "Reported course",
+    "moderation.reportedUser": "Reported user",
+    "moderation.openCourse": "Open course",
+    "moderation.courseLoadingName": "Fetching course name…",
+
+    "moderation.copyId": "Copy report ID",
+    "moderation.copyTargetId": "Copy target ID",
+    "moderation.copyFailed": "Copy failed.",
+
+    "moderation.resolutionNotesLabel": "Resolution notes (optional)",
+    "moderation.resolutionNotesPlaceholder": "What was decided / why was this resolved?",
+    "moderation.resolvedReport": "Resolved report",
+    "moderation.openingCourse": "Opening…",
+    "moderation.courseNotFound": "Course not found (id is not in the list).",
+
+    
 
     // Services
     "services.heroTitle": "All ChefUP courses",
@@ -324,6 +432,30 @@ const translations: Record<Lang, Record<string, string>> = {
     "course.mode.inperson": "On-site",
     "course.showDetails": "Show details",
 
+    // käyttäjät
+
+    // i18n.tsx – lisää translations.en:
+    "nav.users": "Users",
+
+    "users.title": "Users",
+    "users.subtitle": "Browse users and open a public profile.",
+    "users.searchLabel": "Search",
+    "users.searchPlaceholder": "Search by name, email or description…",
+    "users.loading": "Loading users…",
+    "users.noUsers": "No users found.",
+    "users.openProfile": "Open profile",
+
+    "user.title": "User profile",
+    "user.backToUsers": "Back to users",
+    "user.loading": "Loading user…",
+    "user.offeredCoursesTitle": "Offered courses",
+    "user.loadingCourses": "Loading courses…",
+    "user.noCourses": "This user has no courses.",
+
+    "report.userSectionTitle": "Report user",
+    "report.userIntro": "You are reporting this user:",
+
+
     // Footer
     "footer.tagline": "Cooking courses in one place.",
     "footer.contact": "Contact",
@@ -337,22 +469,32 @@ const translations: Record<Lang, Record<string, string>> = {
   },
 };
 
+// Context alustetaan “undefined”: jos hookkia käytetään ilman Provideria, heitetään virhe.
 const I18nContext = createContext<I18nCtx | undefined>(undefined);
 
 export function I18nProvider({ children }: { children: ReactNode }) {
+  // Kieli alustetaan localStoragesta:
+  // - jos tallessa "en" -> käytetään en
+  // - muuten oletus fi
   const [lang, setLangState] = useState<Lang>(() => {
     const stored = localStorage.getItem("lang");
     return stored === "en" ? "en" : "fi";
   });
 
+  // setLang: päivittää state + tallentaa valinnan localStorageen
   const setLang = (l: Lang) => {
     setLangState(l);
     localStorage.setItem("lang", l);
   };
 
+  // t(key): hakee käännöksen nykyisellä kielellä.
+  // Fallback:
+  // 1) jos avain puuttuu EN:stä, käytetään FI-tekstiä
+  // 2) jos puuttuu myös FI:stä, palautetaan key (helpottaa debugia)
   const t = (key: string) =>
     translations[lang][key] ?? translations.fi[key] ?? key;
 
+  // Provider jakaa lang + setLang + t kaikille lapsille
   return (
     <I18nContext.Provider value={{ lang, setLang, t }}>
       {children}
@@ -360,9 +502,9 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   );
 }
 
+// Hook: helpoin tapa käyttää i18n:ää komponenteissa.
 export function useI18n() {
   const ctx = useContext(I18nContext);
   if (!ctx) throw new Error("useI18n must be used within I18nProvider");
   return ctx;
 }
-
