@@ -1,9 +1,6 @@
 import { useState } from "react";
 
-/**
- * FilterPayload on se data, jonka tämä komponentti antaa ulos vanhemmalle komponentille.
- * Kaikki kentät ovat optional, koska käyttäjä voi hakea myös ilman filttereitä.
- */
+// kaikki kentät on optional, koska filtterit voi olla tyhjiä
 type FilterPayload = {
   type?: string;
   category?: string;
@@ -11,11 +8,7 @@ type FilterPayload = {
   dateAfter?: string;
 };
 
-/**
- * Vaihtoehdot palvelun tyypille.
- * key = arvo joka lähetetään filtterinä (tallennetaan stateen)
- * label = teksti jonka käyttäjä näkee valikossa
- */
+// tyypit
 const SERVICE_TYPES = [
   { key: "1on1", label: "Yksityistunti" },
   { key: "group", label: "Ryhmä" },
@@ -23,11 +16,7 @@ const SERVICE_TYPES = [
   { key: "study material", label: "Opiskelumateriaali" },
 ];
 
-/**
- * Vaihtoehdot kategorioille.
- * key = “tekninen” arvo filtteriä varten
- * label = käyttäjälle näkyvä teksti
- */
+// kategoriat
 const SERVICE_CATEGORIES = [
   { key: "cooking", label: "Ruoanlaitto (yleinen)" },
   { key: "baking", label: "Leivonta" },
@@ -37,35 +26,23 @@ const SERVICE_CATEGORIES = [
   { key: "world", label: "Maailman keittiöt" },
 ];
 
-/**
- * FiltersBar on “filtteripalkki”, joka ei itse hae dataa.
- * Se vain kerää käyttäjän valinnat ja ilmoittaa niistä vanhemmalle komponentille.
- *
- * onChange callback:
- * - vanhempi komponentti päättää mitä tapahtuu (esim. API-haku)
- * - tämä komponentti pysyy “tyhmänä” ja helposti uudelleenkäytettävänä
- */
+
+// ei itse hae dataa, vaan antaa filtterit vanhemmalle komponentille (ServicesPage)
 export default function FiltersBar({
   onChange,
 }: {
   onChange: (f: FilterPayload) => void;
 }) {
-  // Jokaiselle filtteri-kentälle oma state, jotta UI pysyy synkassa käyttäjän valintojen kanssa
+  
   const [type, setType] = useState<string>("");
   const [category, setCategory] = useState<string>("");
   const [priceMax, setPriceMax] = useState<number | null>(null);
   const [dateAfter, setDateAfter] = useState<string>("");
 
-  /**
-   * apply = “Hae”-napin toiminto.
-   * Kootaan nykyiset state-arvot yhteen ja annetaan vanhemmalle komponentille.
-   */
+  // hae nappi kutsuu tätä
   const apply = () => onChange({ type, category, priceMax, dateAfter });
 
-  /**
-   * reset = “Tyhjennä”-napin toiminto.
-   * Nollataan kaikki filtterit ja kerrotaan vanhemmalle, että filtterit on tyhjät.
-   */
+ // tyhjennä napin logiikka
   const reset = () => {
     setType("");
     setCategory("");
@@ -75,12 +52,12 @@ export default function FiltersBar({
   };
 
   return (
-    // Tämä laatikko sisältää filtterit + napit
+    // sisältää filtterit + napit
     <div className="border rounded-xl p-4 mb-6 space-y-3 bg-white shadow-sm">
       {/* Filtterikentät gridissä:
           md+: 4 saraketta, pienillä näytöillä menee allekkain */}
       <div className="grid md:grid-cols-4 gap-3">
-        {/* Palvelun tyyppi */}
+        {/* palvelun type */}
         <select
           value={type}
           onChange={(e) => setType(e.target.value)}
@@ -94,7 +71,7 @@ export default function FiltersBar({
           ))}
         </select>
 
-        {/* Kategoria */}
+        {/* kategoria */}
         <select
           value={category}
           onChange={(e) => setCategory(e.target.value)}
@@ -108,23 +85,18 @@ export default function FiltersBar({
           ))}
         </select>
 
-        {/* Maksimihinta.
-            value={priceMax ?? ""} pitää inputin kontrolloituna:
-            - jos priceMax on null -> näytetään tyhjä string
-            - jos numero -> näytetään numero
-        */}
+        {/* max hinta */}
         <input
           type="number"
           placeholder="Max hinta (€)"
           className="rounded-lg border p-2 text-sm"
           value={priceMax ?? ""}
           onChange={(e) =>
-            // Jos kenttä tyhjä, asetetaan null; muuten muutetaan numeroksi
             setPriceMax(e.target.value ? Number(e.target.value) : null)
           }
         />
 
-        {/* Päivämääräraja (esim. “näytä vain tämän päivän jälkeen”) */}
+        {/* päivämääräraja */}
         <input
           type="date"
           className="rounded-lg border p-2 text-sm"
@@ -133,9 +105,9 @@ export default function FiltersBar({
         />
       </div>
 
-      {/* Toimintonapit:
-          - reset tyhjentää filtterit
-          - apply ilmoittaa nykyiset filtterit vanhemmalle */}
+      {/* toimintonapit:
+          reset tyhjentää filtterit
+          apply ilmoittaa filtterit vanhemmalle */}
       <div className="flex items-center justify-end gap-2">
         <button onClick={reset} className="rounded-xl px-3 py-1.5 border">
           Tyhjennä
@@ -148,22 +120,16 @@ export default function FiltersBar({
         </button>
       </div>
 
-      {/* details/summary = selaimen oma “avattava lisäosio” ilman erillistä JS:ää.
-          Tämä on hyvä kevyt tapa lisätä lisäsuodattimia myöhemmin. */}
+      {/* details/summary = selaimen oma “avattava lisäosio” ilman erillistä js:ää
+          tällä voi siis lisätä kevysti suodattimia myöhemmin */}
       <details className="mt-3">
         <summary className="cursor-pointer text-sm text-neutral-600">
           Lisäfiltterit
         </summary>
-
-        {/* Tämä osa on tällä hetkellä “placeholder”:
-            näyttää esimerkin siitä, mitä lisää voisi tulla. */}
         <div className="mt-2 text-sm space-y-2">
-          <p className="text-neutral-500">
-            Tänne voidaan lisätä esim. taso, ruokavalio tai muita facetteja.
-          </p>
+          
 
-          {/* Näytetään kategoriat “tageina” (ei vielä klikkilogikkaa).
-              Tämä on visuaalinen pohja mahdolliselle facetti-filtterille. */}
+          {/* näytetään kategoriat tageina (ei viel klikkaus logiikkaa). */}
           <div className="flex flex-wrap gap-2">
             {SERVICE_CATEGORIES.map((c) => (
               <span

@@ -1,107 +1,101 @@
-// Register.tsx
-// Rekisteröitymissivu: kerää käyttäjän tiedot, validoi ne kevyesti frontissa,
-// kutsuu AuthContextin register()-funktiota (joka tekee API-kutsun backendille)
-// ja navigoi etusivulle kun rekisteröinti onnistuu.
+// käyttäjä täyttää rekisteröitymislomakkeen ja lähettää sen
+// kutsutaan useAuth().register(...) -> jos onnistuu, ohjataan etusivulle.
+//
+// tää tiedosto ei itse tee axios/fetch -kutsuj
+// vaan käyttää (useAuth) joka hoitaa backendin
 
-import { useState, type FormEvent } from "react"; // useState = lomakkeen tila, FormEvent = TS-tyyppi submit-eventille
-import { useNavigate, Link } from "react-router-dom"; // useNavigate = sivun vaihto koodista, Link = sisäinen linkki ilman reloadia
-import { useI18n } from "../i18n"; // i18n-hook: t(key) palauttaa käännetyn tekstin
-import { toMessage } from "../lib/error"; // muuntaa error-olion selkeäksi tekstiksi UI:lle
-import { useAuth } from "../useAuth"; // auth-hook: tarjoaa register()-funktion (ja muut auth-toiminnot)
+import { useState, type FormEvent } from "react";
+import { useNavigate, Link } from "react-router-dom";
+import { useI18n } from "../i18n";
+import { toMessage } from "../lib/error";
+import { useAuth } from "../useAuth";
 
 export default function Register() {
-  // t() käytetään UI-teksteihin (suomi/englanti jne.)
   const { t } = useI18n();
 
-  // nav() vaihdetaan reittiä ohjelmallisesti (esim. onnistuneen rekisteröinnin jälkeen)
   const nav = useNavigate();
+  const { register } = useAuth(); // rekisteröintifunktio auth-kontekstista
 
-  // register() tulee projektin auth-kerroksesta:
-  // yleensä se tekee POST /api/auth/register tms ja tallentaa tokenin/profiilin
-  const { register } = useAuth();
-
-  // Lomakkeen kentät pidetään state-muuttujissa -> inputit ovat "controlled components"
+  // inputin arvo on sidottu Reactin stateen.
+  // eli inputin value tulee state:sta ja onChange päivittää statea.
   const [firstname, setFirstname] = useState("");
   const [surname, setSurname] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [password2, setPassword2] = useState("");
-
-  // error: näytetään virheviesti käyttäjälle
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false); // nappia ei voi spämmiä
 
-  // loading: estää tuplaklikkaukset ja näyttää "lähettää..." tekstin
-  const [loading, setLoading] = useState(false);
 
-  // onSubmit: ajetaan kun formi lähetetään
+  // kutsutaan kun käyttäjä lähettää lomakkeen
   const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault(); // estää selaimen oletus-submitin (page reload)
-    setError(null); // nollataan vanha virhe
+    e.preventDefault(); // estää selaimen reload-submitin 
+    setError(null); 
 
-    // Kevyt validointi frontissa:
-    // - trim() poistaa turhat välilyönnit alusta/lopusta
+    // pakolliset kentät täytetty
+    // ! tätä validaatiota voisi laajentaa !
     if (!firstname.trim() || !surname.trim() || !email.trim() || !password) {
-      setError(t("common.error")); // yleinen "täytä kaikki kentät" tms
+      setError(t("common.error"));
       return;
     }
 
-    // Salasanan varmistus
     if (password !== password2) {
       setError(t("register.passwordMismatch"));
       return;
     }
 
-    setLoading(true); // UI: nappi disabled + "submitting"
+    // estetään nappia spämmiämällä useampi submit yhtä aikaa
+    setLoading(true);
     try {
-      // Kutsutaan auth-kerroksen registeriä.
-      // Tämä abstrahoi pois sen, missä endpointissa on backend ja miten token tallennetaan.
-      await register({
+      
+      await register({ //register-funktio auth-kontekstista
         firstname: firstname.trim(),
         surname: surname.trim(),
         email: email.trim(),
 
-        // HUOM: backend odottaa kenttää nimellä "hashed_password".
-        // Tässä annetaan raakateksti password -> backend (toivottavasti) hashää sen.
-        // (Kentän nimi voi olla tekninen legacy-nimi vaikka sisältö ei vielä olisi hash.)
+        // jostain syystä password nimi on hashed_password, mutta tällä tarkoitetaan ihan normaalia salasanaa 
         hashed_password: password,
       });
 
-      // Onnistui:
-      // Kommentin idea: register() todennäköisesti tallentaa tokenin ja user-profiilin (applyAuth tms)
-      // joten tämän jälkeen käyttäjä on käytännössä "kirjautunut sisään".
-      nav("/"); // ohjataan etusivulle
-    } catch (e: unknown) {
-      // Backend/verkko/validointi-virheet -> toMessage tekee niistä luettavan
-      setError(toMessage(e));
+
+      // jos rekisteröinti onnistui, navigoidaan etusivulle, muuten virhe
+      nav("/");
+    } catch (e: unknown) { 
+
+      setError(toMessage(e)); 
     } finally {
-      setLoading(false); // vapautetaan nappi, myös virhetilanteessa
+      setLoading(false); // nappi taas käyttöön
     }
   };
 
+
+
+  // ----- rekisteröintilomakkeen UI -----
+
   return (
     <main className="mx-auto max-w-md px-4 py-8 md:py-12">
-      {/* Otsikot ja infot tulevat i18n:stä */}
+      {/* otsikot */}
       <h1 className="text-2xl font-bold mb-4">{t("register.title")}</h1>
       <p className="text-sm text-neutral-600 mb-4">{t("register.info")}</p>
 
-      {/* Formi: onSubmit hoitaa validoinnin + API-kutsun */}
+      {/* form: submit hoidetaan onSubmit-funktiolla */}
       <form
         onSubmit={onSubmit}
         className="rounded-2xl border bg-white p-4 md:p-6 shadow-sm space-y-3"
       >
-        {/* Etunimi */}
+        {/* etunimi */}
         <div>
           <label className="block text-sm font-medium mb-1">
             {t("register.firstname")}
           </label>
           <input
             className="w-full rounded-xl border px-3 py-2 text-sm"
-            value={firstname} // controlled input -> arvo tulee state:stä
-            onChange={(e) => setFirstname(e.target.value)} // päivittää statea jokaisella näppäilyllä
+            value={firstname}
+            onChange={(e) => setFirstname(e.target.value)}
           />
         </div>
 
-        {/* Sukunimi */}
+        {/* sukunimi */}
         <div>
           <label className="block text-sm font-medium mb-1">
             {t("register.surname")}
@@ -113,7 +107,7 @@ export default function Register() {
           />
         </div>
 
-        {/* Email */}
+        {/* email */}
         <div>
           <label className="block text-sm font-medium mb-1">
             {t("register.email")}
@@ -125,20 +119,20 @@ export default function Register() {
           />
         </div>
 
-        {/* Salasana */}
+        {/* salasana */}
         <div>
           <label className="block text-sm font-medium mb-1">
             {t("register.password")}
           </label>
           <input
-            type="password" // selaimen salasana-UI
+            type="password"
             className="w-full rounded-xl border px-3 py-2 text-sm"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />
         </div>
 
-        {/* Salasanan vahvistus */}
+        {/* salasana uudestaan */}
         <div>
           <label className="block text-sm font-medium mb-1">
             {t("register.passwordConfirm")}
@@ -151,14 +145,14 @@ export default function Register() {
           />
         </div>
 
-        {/* Virheviesti (jos error != null) */}
+        {/* virhe näkyy vain jos error on asetettu */}
         {error && (
           <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2">
             {error}
           </div>
         )}
 
-        {/* Submit-nappi: disabled loading-tilassa */}
+        {/* nappi menee disabled kun loading=true (ettei voi spämmätä submitia) */}
         <button
           disabled={loading}
           className="w-full rounded-xl px-3 py-2 border bg-black text-white disabled:opacity-50 text-sm"
@@ -166,7 +160,7 @@ export default function Register() {
           {loading ? t("register.submitting") : t("register.submit")}
         </button>
 
-        {/* Alalinkki login-sivulle (tekstit näyttää olevan nimetty vähän hassusti i18n:ssä) */}
+        {/* linkki login-sivulle */}
         <div className="text-xs text-neutral-600 mt-2">
           {t("login.noAccount")}{" "}
           <Link to="/login" className="underline">

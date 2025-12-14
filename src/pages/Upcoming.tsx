@@ -1,38 +1,34 @@
-// Upcoming.tsx
-// Tulevat-tapahtumat -sivu: hakee kaikki listaukset backendistä,
+// haetaan backendistä kaikki palvelut,
 // suodattaa niistä vain tulevaisuuden tapahtumat (datetime >= nyt),
 // järjestää ne aikajärjestykseen ja näyttää ServiceCard-kortteina.
 // Klikistä avautuu ServiceDetailModal.
 
-import { useEffect, useState } from "react"; // React hookit: datahaku (useEffect) + tila (useState)
-import { listServices } from "../features/services/api.services"; // API: hae palvelulista backendistä
-import type { ListedService } from "../types"; // TS-tyyppi listauksille
-import { toMessage } from "../lib/error"; // virheen muunto luettavaan muotoon
-import ServiceCard from "../features/services/ServiceCard"; // korttikomponentti listauksen näyttöön
-import { useI18n } from "../i18n"; // käännökset
-import ServiceDetailModal from "../features/services/ServiceDetailModal"; // detail-modal yhden palvelun tarkasteluun
+import { useEffect, useState } from "react"; 
+import { listServices } from "../features/services/api.services"; 
+import type { ListedService } from "../types"; 
+import { toMessage } from "../lib/error"; 
+import ServiceCard from "../features/services/ServiceCard"; 
+import { useI18n } from "../i18n"; 
+import ServiceDetailModal from "../features/services/ServiceDetailModal"; 
 
 export default function Upcoming() {
-  // items: null = ei vielä ladattu, [] = ladattu mutta tyhjä
   const [items, setItems] = useState<ListedService[] | null>(null);
 
-  // error: näytetään jos listServices epäonnistuu
+  
   const [error, setError] = useState<string | null>(null);
 
-  // detail: kun käyttäjä avaa yhden palvelun, se tallennetaan tähän ja modal avautuu
+  // valittu palvelu detail-modaaliin eli kun käyttäjä klikkaa korttia 
   const [detail, setDetail] = useState<ListedService | null>(null);
 
-  // t() UI-teksteihin
   const { t } = useI18n();
 
-  // ------------------------------------------------------------
-  // Datahaku: haetaan palvelut kerran sivun mountissa
-  // ------------------------------------------------------------
+
+  // haetaan kaikki palvelut kun sivu latautuu
   useEffect(() => {
     (async () => {
       try {
         setError(null);
-        const data = await listServices({}); // API: hae kaikki palvelut
+        const data = await listServices({}); // hae kaikki palvelut
         setItems(data);
       } catch (e: unknown) {
         setError(toMessage(e));
@@ -40,10 +36,8 @@ export default function Upcoming() {
     })();
   }, []);
 
-  // ------------------------------------------------------------
-  // Tulevien listojen muodostus
-  // ------------------------------------------------------------
-  const now = Date.now(); // “nykyhetki” millisekunteina
+
+  const now = Date.now(); // nykyinen aika vertailua varten 
 
   // upcoming:
   // 1) vain ne joilla on datetime
@@ -63,12 +57,11 @@ export default function Upcoming() {
           new Date(a.datetime!).getTime() - new Date(b.datetime!).getTime()
       );
 
-  // ------------------------------------------------------------
-  // UI
-  // ------------------------------------------------------------
+
+  // ----- UI -----
   return (
     <main className="page-shell py-8 md:py-12">
-      {/* Otsikko + selite */}
+      {/* otsikko + selite */}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl md:text-3xl font-bold">
@@ -80,25 +73,25 @@ export default function Upcoming() {
         </div>
       </div>
 
-      {/* Virheviesti */}
+      {/* virheviesti */}
       {error && (
         <div className="mb-4 rounded-xl border bg-red-50 text-red-600 p-3">
           {error}
         </div>
       )}
 
-      {/* Lataustila: items === null */}
+      {/* lataustila: items === null */}
       {!items && <div>{t("services.loading")}</div>}
 
-      {/* Korttilistaus */}
+      {/* korttilistaus */}
       <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-6">
         {upcoming.map((s) => (
-          // ServiceCard kutsuu onOpen(service) kun käyttäjä haluaa avata detailin
+          // serviceCard kutsuu onOpen(service) kun käyttäjä haluaa avata detailin
           <ServiceCard key={s.id} s={s} onOpen={setDetail} />
         ))}
       </div>
 
-      {/* Detail-modal:
+      {/* detail-modal:
           - service=detail (null => käytännössä “ei valintaa”)
           - onClose nollaa detailin */}
       <ServiceDetailModal

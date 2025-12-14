@@ -1,68 +1,31 @@
+// ! Käytetään vain tätä tiedostoa kursseihin/palveluihin liittyviin API-kutsuihin!
+
 import { api } from "../../api";
 import type { ListedService } from "../../types";
 
-/**
- * Tämä tiedosto on “API-kerros” kursseille / palveluille (services).
- *
- * UI käyttää näitä funktioita, jotta:
- * - URL-osoitteet ja HTTP-metodit ovat yhdessä paikassa
- * - tyypit (ListedService) pysyvät yhtenäisinä koko sovelluksessa
- * - komponentit pysyvät siisteinä (ei axios-kutsuja joka tiedostossa)
- */
+// !HUOM!: create/update ei lähetä id/created/updated kenttiä, koska backend hoitaa ne, eli omit poistaa ne tyypeistä.
+export type CreateListedService = Omit<ListedService, "id" | "created" | "updated">;
+export type UpdateListedService = Omit<ListedService, "id" | "created" | "updated">;
 
-/**
- * Create/Update payload:
- * Kun luodaan tai päivitetään kurssi, frontend ei yleensä lähetä:
- * - id (backend luo sen)
- * - created / updated (backend asettaa aikaleimat)
- *
- * Omit<> tekee uuden tyypin, josta nuo kentät on poistettu.
- */
-export type CreateListedService = Omit<
-  ListedService,
-  "id" | "created" | "updated"
->;
-export type UpdateListedService = Omit<
-  ListedService,
-  "id" | "created" | "updated"
->;
 
-/**
- * Listaushakuun tulevat mahdolliset query-parametrit.
- * Nämä menevät URL:iin muotoon esim:
- *   /services?q=pizza&category=cooking&type=live
- */
+// listauksen suodatusparametrit
 type ListParams = { q?: string; category?: string; type?: string };
 
-/**
- * Hakee listan kursseista/palveluista.
- *
- * params on vapaaehtoinen:
- * - jos sitä ei anneta -> haetaan kaikki
- * - jos annetaan -> backend suodattaa hakuehtojen perusteella
- *
- * axios/api hoitaa query-parametrien lisäämisen URL:iin kun käytetään { params }.
- */
+// hakee listan kursseista
 export async function listServices(params?: ListParams): Promise<ListedService[]> {
   const { data } = await api.get("/services", { params });
   return data;
 }
 
-/**
- * Hakee yhden kurssin/palvelun id:llä.
- * Tyypillinen käyttö: detail-sivu tai muokkauslomake.
- */
+// hakee tietyn kurssin id:llä
 export async function getService(id: string): Promise<ListedService> {
   const { data } = await api.get(`/services/${id}`);
   return data;
 }
 
-/**
- * Luo uuden kurssin/palvelun.
- * POST /services
- *
- * Palauttaa backendin tallentaman objektin (sisältää myös id:n).
- */
+// uuden kurssin luonti
+// payloadissa ei oo id/created/updated kenttiä
+// palauttaa backendin version jossa on nekin mukana
 export async function createService(
   payload: CreateListedService
 ): Promise<ListedService> {
@@ -70,10 +33,7 @@ export async function createService(
   return data;
 }
 
-/**
- * Päivittää olemassa olevan kurssin/palvelun.
- * PUT tarkoittaa yleensä “korvaa/päivitä resurssi tällä sisällöllä”.
- */
+// päivittää olemassa olevan kurssin id:llä ja lähettää päivityspayloadin backendille
 export async function updateService(
   id: string,
   payload: UpdateListedService
@@ -82,10 +42,14 @@ export async function updateService(
   return data;
 }
 
-/**
- * Poistaa kurssin/palvelun id:llä.
- * Tässä ei palauteta dataa, joten return-tyyppi on void.
- */
+// poistaa kurssin id:llä
 export async function deleteService(id: string): Promise<void> {
   await api.delete(`/services/${id}`);
+}
+
+// hakee kirjautuneen käyttäjän omat kurssit/listaukset (ne joissa listing_creator = userId)
+// ei vaadi backendiltä reittiä, koska käytetään olemassa olevaa GET /services ja filtteröidään frontissa
+export async function getMyServices(userId: string): Promise<ListedService[]> {
+  const all = await listServices();
+  return all.filter((s) => s.listing_creator === userId);
 }
