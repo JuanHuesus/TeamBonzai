@@ -75,6 +75,9 @@ const translations: Record<Lang, Record<string, string>> = {
 
     // Profiili
     "profile.title": "Käyttäjäprofiili",
+    "profile.myCoursesTitle": "Omat kurssit",
+    "profile.loadingCourses": "Ladataan kursseja…",
+    "profile.noCourses": "Sinulla ei ole omia kursseja.",
     "profile.notLoggedIn": "Et ole kirjautunut sisään.",
     "profile.goToLogin": "Siirry kirjautumaan",
     "profile.email": "Sähköposti",
@@ -298,6 +301,9 @@ const translations: Record<Lang, Record<string, string>> = {
 
     // Profile
     "profile.title": "User profile",
+    "profile.myCoursesTitle": "My Courses",
+    "profile.loadingCourses": "Loading courses…",
+    "profile.noCourses": "You have not posted any courses.",
     "profile.notLoggedIn": "You are not logged in.",
     "profile.goToLogin": "Go to login",
     "profile.email": "Email",
