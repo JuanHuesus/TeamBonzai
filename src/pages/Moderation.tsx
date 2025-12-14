@@ -398,9 +398,7 @@ export default function ModerationPage() {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="font-semibold text-base">
-                        {r.target_type === "service"
-                          ? t("moderation.reportOnService")
-                          : t("moderation.reportOnUser")}
+               
                       </div>
 
                       <div className="mt-1 text-xs text-neutral-500">

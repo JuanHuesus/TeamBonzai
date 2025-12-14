@@ -4,6 +4,9 @@
 
 import { useEffect, useState } from "react"; // React-hookit: state + sivuvaikutukset
 import { useAuth } from "../useAuth"; // projektin auth-hook: antaa käyttäjän tiedot (tässä email)
+import { listServices } from "../features/services/api.services";
+import type { ListedService } from "../types";
+import ServiceCard from "../features/services/ServiceCard";
 import { useI18n } from "../i18n"; // i18n-hook: t(key) hakee käännökset
 import { getMyReports } from "../features/reports/api.reports";
 // API-kutsu backendille: hakee "minun raporttini" (kirjautuneen käyttäjän tekemät raportit)
@@ -11,8 +14,8 @@ import type { Report } from "../types"; // TypeScript-tyyppi raporttilistalle
 import { toMessage } from "../lib/error"; // muuntaa virheen luettavaksi viestiksi
 
 export default function ProfilePage() {
-  // useAuth() antaa tässä sähköpostin -> toimii käytännössä “onko kirjautunut” -tarkistuksena
-  const { email } = useAuth();
+  // useAuth() antaa tässä sähköpostin ja userId -> toimii käytännössä “onko kirjautunut” -tarkistuksena
+  const { email, userId } = useAuth();
 
   // Käännökset UI-teksteille
   const { t } = useI18n();
@@ -20,8 +23,12 @@ export default function ProfilePage() {
   // reports: null = ei vielä ladattu, [] = ladattu mutta ei raportteja, [..] = data löytyy
   const [reports, setReports] = useState<Report[] | null>(null);
 
+  // userCourses: null = ei vielä ladattu, [] = ladattu mutta ei kursseja, [..] = data löytyy
+  const [userCourses, setUserCourses] = useState<ListedService[] | null>(null);
+
   // error: jos getMyReports epäonnistuu, näytetään viesti
   const [error, setError] = useState<string | null>(null);
+  const [coursesError, setCoursesError] = useState<string | null>(null);
 
   // useEffect: kun email muuttuu (eli kirjautuminen tapahtuu / poistuu), ajetaan raporttien haku
   useEffect(() => {
@@ -29,7 +36,6 @@ export default function ProfilePage() {
     if (!email) return;
 
     // IIFE (Immediately Invoked Function Expression):
-    // tehdään async-funktio suoraan effectin sisään, koska useEffect callback ei voi olla async
     (async () => {
       try {
         const data = await getMyReports(); // API: hae kirjautuneen käyttäjän raportit
@@ -39,6 +45,21 @@ export default function ProfilePage() {
       }
     })();
   }, [email]); // ajetaan uudestaan jos email muuttuu
+
+  // Hae käyttäjän omat kurssit/palvelut
+  useEffect(() => {
+    if (!userId) return;
+    (async () => {
+      try {
+        const all = await listServices();
+        // Suodatetaan vain käyttäjän luomat kurssit
+        const mine = all.filter((svc) => svc.listing_creator === userId);
+        setUserCourses(mine);
+      } catch (e: unknown) {
+        setCoursesError(toMessage(e));
+      }
+    })();
+  }, [userId]);
 
   // Jos ei ole kirjautunut, näytetään “kirjaudu sisään” -näkymä
   if (!email) {
@@ -68,6 +89,35 @@ export default function ProfilePage() {
         <p className="mt-2 text-xs text-neutral-500">
           {t("profile.subtitle")}
         </p>
+      </section>
+
+      {/* Omat kurssit/palvelut -kortti */}
+      <section className="rounded-2xl border bg-white p-4 shadow-sm">
+        <h2 className="text-lg font-semibold mb-2">
+          {t("profile.myCoursesTitle")}
+        </h2>
+        {coursesError && (
+          <div className="mb-2 rounded-xl border bg-red-50 text-red-600 p-2 text-sm">
+            {coursesError}
+          </div>
+        )}
+        {!userCourses && (
+          <div className="text-sm text-neutral-500">
+            {t("profile.loadingCourses")}
+          </div>
+        )}
+        {userCourses && userCourses.length === 0 && (
+          <div className="text-sm text-neutral-500">
+            {t("profile.noCourses")}
+          </div>
+        )}
+        {userCourses && userCourses.length > 0 && (
+          <div className="grid gap-4 md:grid-cols-2">
+            {userCourses.map((svc) => (
+              <ServiceCard key={svc.id} s={svc} onOpen={() => {}} />
+            ))}
+          </div>
+        )}
       </section>
 
       {/* “Minun raportit” -kortti */}

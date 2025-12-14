@@ -20,7 +20,7 @@ export type ListedService = {
   location: string | null;
   service_provider: string;
   listing_creator: string;
-  price: string; // esim "€29"
+  price: string; 
   service_type:
     | "1on1"
     | "group"

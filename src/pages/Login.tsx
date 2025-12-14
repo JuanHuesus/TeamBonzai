@@ -17,10 +17,8 @@ export default function Login() {
   // nav(...) = ohjelmallinen navigointi (esim. loginin jälkeen etusivulle)
   const nav = useNavigate();
 
-  // Lomakkeen kentät.
-  // Tässä on valmiiksi esitäytetyt arvot (helpottaa testailua kehityksessä).
-  const [email, setEmail] = useState("aino.koskinen@example.com");
-  const [password, setPassword] = useState("testi");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
 
   // UI-tilat: virhe ja lataus
   const [error, setError] = useState<string | null>(null);

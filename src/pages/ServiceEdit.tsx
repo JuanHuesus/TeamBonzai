@@ -1,4 +1,7 @@
-// src/pages/ServiceEdit.tsx
+// tää sivu hoitaa sekä uuden kurssin/listauksen luonnin että vanhan muokkauksen.
+// - jos urlissa EI ole id:tä -> “uusi listaus” (isNew=true)
+// - jos urlissa on id -> haetaan listaus backendistä ja muokataan sitä
+
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import axios from "axios";
@@ -17,18 +20,19 @@ import { useI18n } from "../i18n";
 import { useAuth } from "../useAuth";
 import { api } from "../api";
 
-/** Palauttaa true jos location on URL → tulkitaan etätilaksi */
+/** jos location näyttää urlilta -> tulkitaan etäkurssiksi */
 function isOnline(location: string | null | undefined) {
   if (!location) return false;
   try {
     const u = new URL(location);
     return u.protocol === "http:" || u.protocol === "https:";
   } catch {
+    // jos ei ole validi url, tulkitaan “lähikurssiksi”
     return false;
   }
 }
 
-/** Pilko ISO-aika -> (date, time) paikallisiin input-kenttiin */
+// pilkotaan backendin iso-aika kahteen inputtiin (date + time) koska HTML ei tue iso-datetimea
 function splitIso(iso: string | null) {
   if (!iso) return { date: "", time: "" };
   const d = new Date(iso);
@@ -40,39 +44,46 @@ function splitIso(iso: string | null) {
   return { date, time };
 }
 
-/** Rakenna ISO UTC:na: YYYY-MM-DD + HH:mm -> 2025-07-01T10:30:00Z */
+// yhdistetään date + time takaisin iso-muotoon (utc) backendille lähetettäväksi
 function combineToIso(date: string, time: string): string | null {
+  // jos molemmat tyhjiä, niin ei aseteta datetimea ollenkaan
   if (!date && !time) return null;
+
+  // jos toinen puuttuu = ei vielä rakenneta, koska 
   if (!date || !time) return null;
 
   const [y, m, d] = date.split("-").map(Number);
   const [hh, mm] = time.split(":").map(Number);
 
+  // tehdään ensin paikallinen date-objekti (käyttäjän timezone)
   const local = new Date(y, (m ?? 1) - 1, d ?? 1, hh ?? 0, mm ?? 0, 0, 0);
+
+  // muunnetaan UTC-iso-muotoon
   return new Date(local.getTime() - local.getTimezoneOffset() * 60000)
     .toISOString()
     .replace(/\.\d{3}Z$/, "Z");
 }
 
-/** Kevyt JWT roolin luku frontissa (fallback jos useAuth().role on tyhjä/väärä) */
+// varmistus: jos useAuth().role on tyhjä/väärä, luetaan rooli suoraan jwt:stä
 function roleFromJwt(token: string | null | undefined): string | null {
   if (!token) return null;
   try {
     const parts = token.split(".");
     if (parts.length !== 3) return null;
 
-    // base64url -> base64
-    const b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    // base64url dekoodaus 
+    const b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/"); 
     const padded = b64 + "===".slice((b64.length + 3) % 4);
 
+    // dekoodaus ja JSON-parsaus 
     const json = decodeURIComponent(
       atob(padded)
         .split("")
         .map((c) => "%" + c.charCodeAt(0).toString(16).padStart(2, "0"))
         .join("")
     );
-
-    const payload = JSON.parse(json);
+    // haetaan user_role tai role kenttä
+    const payload = JSON.parse(json); 
     const r = payload?.user_role ?? payload?.role ?? null;
     return typeof r === "string" ? r : null;
   } catch {
@@ -80,9 +91,12 @@ function roleFromJwt(token: string | null | undefined): string | null {
   }
 }
 
+// muuntaa axios-virheen käyttäjäystävälliseksi tekstiksi
 function niceApiError(e: unknown): string {
   if (axios.isAxiosError(e)) {
     const status = e.response?.status;
+
+    // yritetään lukea backendin virheviesti 
     const msg =
       (e.response?.data as any)?.message ||
       (e.response?.data as any)?.error ||
@@ -97,9 +111,13 @@ function niceApiError(e: unknown): string {
 
     return msg;
   }
+
+  // jos ei ole axios error, käytetään yleistä muunninta
   return toMessage(e);
 }
 
+// “tyhjä listaus” joka antaa formille alkuarvot.
+// tätä käytetään kun luodaan uusi listaus tai kun data ei ole vielä ladattu.
 const empty: ListedService = {
   id: "",
   name: "",
@@ -118,6 +136,8 @@ const empty: ListedService = {
 };
 
 export default function ServiceEdit() {
+  // url-parametri: /edit/:id
+  // jos id puuttuu -> “uusi listaus”
   const { id } = useParams();
   const isNew = id === undefined;
 
@@ -125,36 +145,49 @@ export default function ServiceEdit() {
   const { t, lang } = useI18n();
   const { token, userId, role } = useAuth();
 
+  // rooli jwt:stä varmistuksena
   const jwtRole = roleFromJwt(token);
   const effectiveRole = (role ?? jwtRole ?? "").toLowerCase();
   const isModerator = effectiveRole === "admin" || effectiveRole === "moderator";
 
+  // kirjautumistarkistus
   const isLoggedIn = !!token && !!userId;
 
+  //
   const [item, setItem] = useState<ListedService>(empty);
+
+  // nämä on vain input-kenttiä varten (date + time)
   const [datePart, setDatePart] = useState("");
   const [timePart, setTimePart] = useState("");
 
+  // ui-tilat
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // Uusi listaus: aseta listing_creator automaattisesti
+  // jos luodaan uusi listaus, asetetaan listing_creator automaattisesti kirjautuneen käyttäjän id:ksi
   useEffect(() => {
     if (isNew && userId) {
       setItem((prev) => ({ ...prev, listing_creator: userId }));
     }
   }, [isNew, userId]);
 
-  // Hae olemassa oleva tai nollaa uusi
+  // jos muokataan olemassa olevaa:
+  // - haetaan data backendistä getService(id)
+  // - täytetään item + pilkotaan datetime inputteihin
+  //
+  // jos luodaan uusi:
+  // - nollataan formi (mut säilytetään listing_creator jos se on jo asetettu)
   useEffect(() => {
     if (!isNew && id) {
       setLoading(true);
+
       (async () => {
         try {
           const data = await getService(id);
           setItem(data);
+
           const { date, time } = splitIso(data.datetime);
           setDatePart(date);
           setTimePart(time);
@@ -172,17 +205,21 @@ export default function ServiceEdit() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, isNew]);
 
-  // Synkkaa datetime date/time inputeista
+  // pidetään item.datetime synkassa date/time inputtien kanssa
   useEffect(() => {
     setItem((prev) => ({ ...prev, datetime: combineToIso(datePart, timePart) }));
   }, [datePart, timePart]);
 
+  // omistaja = se userId joka on tallennettu listing_creator kenttään
   const ownerId = item.listing_creator;
   const isOwner = !!userId && !!ownerId && ownerId === userId;
 
-  // Readonly jos ei omistaja eikä admin/moderator
+  // readonly jos:
+  // - ei ole uusi listaus
+  // - eikä ole omistaja eikä admin/moderaattori
   const readOnly = !isNew && !(isOwner || isModerator);
 
+  // preview-pane käyttää näitä “kivoja” tekstejä
   const dateText = useMemo(
     () =>
       item.datetime
@@ -195,6 +232,10 @@ export default function ServiceEdit() {
   const priceText = item.price?.trim() ? item.price : t("course.free");
   const img = item.image || "https://placehold.co/1600x900?text=Kuva";
 
+  // tallennus:
+  // - tarkistetaan kirjautuminen ja oikeudet
+  // - uusi: createService(payload) ja siirrytään /edit/:id
+  // - vanha: updateService(id, payload) ja palataan etusivulle
   const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setSaving(true);
@@ -202,28 +243,39 @@ export default function ServiceEdit() {
 
     try {
       if (!isLoggedIn) throw new Error("Kirjaudu sisään luodaksesi tai muokataksesi listauksia.");
+
+      // jos muokataan vanhaa, vain omistaja tai mod/admin saa tallentaa
       if (!isNew && !(isOwner || isModerator)) {
         throw new Error("Vain listauksen luoja tai admin/moderaattori voi muokata tätä listausta.");
       }
 
+      // kevyt fronttivalidointi
       if (!item.name.trim()) throw new Error("Nimi on pakollinen.");
       if (!item.description.trim()) throw new Error("Kuvaus on pakollinen.");
 
       if (isNew) {
+        // create payloadista poistetaan id/created/updated (backend tekee ne)
         const { id: _id, created: _c, updated: _u, ...rest } = item;
         const payload: CreateListedService = {
           ...rest,
-          listing_creator: userId!, // pakotetaan omaksi
+          listing_creator: userId!, // pakotetaan omistajaksi kirjautunut
         };
+
         const created = await createService(payload);
+
+        // ohjataan suoraan edit-näkymään uudella id:llä
         nav(`/edit/${created.id}`);
       } else {
+        // update payloadista poistetaan id/created/updated, ja pidetään omistaja ennallaan
         const { id: realId, created: _c, updated: _u, ...rest } = item;
         const payload: UpdateListedService = {
           ...rest,
-          listing_creator: item.listing_creator, // älä vaihda omistajaa
+          listing_creator: item.listing_creator,
         };
+
         await updateService(realId, payload);
+
+        // teillä tässä palataan etusivulle tallennuksen jälkeen
         nav("/");
       }
     } catch (e: unknown) {
@@ -234,14 +286,16 @@ export default function ServiceEdit() {
   };
 
   /**
-   * Front-only “paras yritys” admin-poistoon, kun backend antaa 500.
-   * Tää EI ole varma fix, mutta joskus backend on kirjoitettu niin että se odottaa body/query/header -vihjeitä.
+   * “front-only” admin-poisto fallback.
+   * tää on käytännössä varasuunnitelma, jos backend ei tue admin-poistoa kunnolla.
+   * eli yritetään muutamaa erilaista request-muotoa, jos joku sattuisi osumaan backendin odotuksiin.
+   * (tää on vähän hacky, mutta joskus auttaa demoissa.)
    */
   async function tryAdminDeleteFrontOnly(serviceId: string) {
     const owner = item.listing_creator;
 
     const attempts: Array<() => Promise<void>> = [
-      // 1) DELETE + body + query + headerit
+      // 1) DELETE jossa on params + body + custom headerit
       async () => {
         await api.delete(`/services/${serviceId}`, {
           params: { admin: "1", force: "1" },
@@ -257,7 +311,7 @@ export default function ServiceEdit() {
         });
       },
 
-      // 2) POST /services/:id/delete (jos backendissä on tehty tällainen)
+      // 2) jos backendissä olisi erillinen “delete endpoint”
       async () => {
         await api.post(`/services/${serviceId}/delete`, {
           as_admin: true,
@@ -266,7 +320,7 @@ export default function ServiceEdit() {
         });
       },
 
-      // 3) Method override (jos backendissä on express-method-override tms.)
+      // 3) method override -tyyli (jos backend tukee)
       async () => {
         await api.post(
           `/services/${serviceId}`,
@@ -282,7 +336,7 @@ export default function ServiceEdit() {
         );
       },
 
-      // 4) /admin/services/:id (jos backendissä on admin-router)
+      // 4) jos backendissä olisi /admin -router
       async () => {
         await api.delete(`/admin/services/${serviceId}`, {
           params: { force: "1" },
@@ -295,7 +349,7 @@ export default function ServiceEdit() {
     for (const run of attempts) {
       try {
         await run();
-        return; // onnistui
+        return;
       } catch (e) {
         lastErr = e;
       }
@@ -304,6 +358,11 @@ export default function ServiceEdit() {
     throw lastErr;
   }
 
+  // poisto:
+  // - varmistetaan kirjautuminen ja oikeudet
+  // - confirm()
+  // - yritetään deleteService(id)
+  // - jos admin/mod mutta ei omistaja ja backend antaa 500/403 -> yritetään fallback
   const onDelete = async () => {
     if (!id) return;
 
@@ -329,13 +388,12 @@ export default function ServiceEdit() {
         nav("/");
         return;
       } catch (e: unknown) {
-        // Jos omistaja -> ei edes yritetä kummempaa, koska backendin pitäisi jo toimia.
-        // Jos admin/mod ja EI omistaja -> yritetään vielä “front-only override”
+        // jos admin/mod poistaa jonkun muun listauksen ja backend sekoilee,
+        // kokeillaan vielä “front-only override”
         if (isModerator && !isOwner) {
           const ax = axios.isAxiosError(e) ? e : null;
           const status = ax?.response?.status;
 
-          // yritetään overridea etenkin jos 500/403
           if (status === 500 || status === 403) {
             await tryAdminDeleteFrontOnly(id);
             nav("/");
@@ -343,18 +401,18 @@ export default function ServiceEdit() {
           }
         }
 
-        // muuten heitetään eteenpäin -> näytetään virhe
+        // muuten näytetään virhe normaalisti
         throw e;
       }
     } catch (e: unknown) {
       const msg = niceApiError(e);
 
-      // Jos edelleen 500 admin-poistossa → front ei voi tehdä enempää
+      // jos admin-poisto edelleen 500 -> tää kertoo suoraan että backend on se ongelma
       if (isModerator && !isOwner && msg.includes("500")) {
         setError(
           msg +
-            "\n\nFront ei pysty korjaamaan tätä, jos backend ei tue admin-poistoa tai siellä on bugi. " +
-            "Kiertotapa: pyydä listauksen tekijää poistamaan se, tai tee moderointi 'piilotuksena' (UI-suodatus raporttien perusteella)."
+            "\n\nfront ei pysty korjaamaan tätä, jos backend ei tue admin-poistoa tai siellä on bugi. " +
+            "kiertotapa: pyydä listauksen tekijää poistamaan se, tai tee moderointi 'piilotuksena' (ui-suodatus raporttien perusteella)."
         );
         return;
       }
@@ -365,6 +423,7 @@ export default function ServiceEdit() {
     }
   };
 
+  // jos tehdään uutta listausta mutta ei olla kirjautuneita -> näytetään “kirjaudu”
   if (isNew && !isLoggedIn) {
     return (
       <main className="mx-auto max-w-3xl px-4 py-8">
@@ -384,6 +443,7 @@ export default function ServiceEdit() {
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
+      {/* yläpalkki: takas linkki + otsikko + napit */}
       <div className="mb-6 flex items-center justify-between gap-3">
         <div>
           <div className="text-sm text-neutral-500">
@@ -404,6 +464,7 @@ export default function ServiceEdit() {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* poisto näkyy vain jos on olemassa oleva ja käyttäjällä on oikeus */}
           {!isNew && (isOwner || isModerator) && (
             <button
               type="button"
@@ -420,6 +481,7 @@ export default function ServiceEdit() {
             Peruuta
           </Link>
 
+          {/* save-nappi piiloon jos readonly */}
           {!readOnly && (
             <button
               form="service-form"
@@ -433,20 +495,24 @@ export default function ServiceEdit() {
         </div>
       </div>
 
+      {/* latausteksti kun haetaan vanhaa listausta */}
       {loading && <div className="mb-6 text-sm text-neutral-500">Ladataan…</div>}
 
+      {/* virheboksi */}
       {error && (
         <div className="mb-6 whitespace-pre-line rounded-xl border bg-red-50 text-red-700 p-3">
           {error}
         </div>
       )}
 
+      {/* layout: vasen = formi, oikea = preview */}
       <div className="grid lg:grid-cols-3 gap-6">
         <form
           id="service-form"
           onSubmit={onSubmit}
           className="lg:col-span-2 rounded-2xl border bg-white p-4 md:p-6 shadow-sm space-y-5"
         >
+          {/* perus jutut */}
           <section className="space-y-3">
             <div>
               <label className="block text-sm font-medium mb-1">Nimi *</label>
@@ -474,6 +540,7 @@ export default function ServiceEdit() {
             </div>
           </section>
 
+          {/* aika + sijainti */}
           <section className="grid md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium mb-1">Päivä</label>
@@ -511,6 +578,7 @@ export default function ServiceEdit() {
             </div>
           </section>
 
+          {/* muut kentät */}
           <section className="grid md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium mb-1">Opettaja / palveluntarjoaja</label>
@@ -595,6 +663,7 @@ export default function ServiceEdit() {
             </div>
           </section>
 
+          {/* alaosan napit (vain jos ei readonly) */}
           {!readOnly && (
             <div className="flex items-center justify-end gap-2 pt-2">
               <Link to="/" className="rounded-xl px-3 py-1.5 border">
@@ -611,6 +680,7 @@ export default function ServiceEdit() {
           )}
         </form>
 
+        {/* oikea puoli: pieni preview kortti, jotta näkee miltä listaus “näyttää” */}
         <aside className="rounded-2xl border bg-white shadow-sm overflow-hidden">
           <div className="aspect-[16/9] overflow-hidden">
             <img
@@ -618,11 +688,13 @@ export default function ServiceEdit() {
               alt=""
               className="h-full w-full object-cover"
               onError={(e) => {
+                // jos url on rikki, vaihdetaan placeholderiin
                 (e.currentTarget as HTMLImageElement).src =
                   "https://placehold.co/1600x900?text=Kuva";
               }}
             />
           </div>
+
           <div className="p-4 space-y-3">
             <div className="flex items-start justify-between gap-3">
               <h3 className="font-semibold text-lg leading-tight">

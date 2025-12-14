@@ -4,17 +4,16 @@ import { useAuth } from "../../useAuth";
 import { toMessage } from "../../lib/error";
 import { postListingRating, postUserRating } from "../ratings/api.ratings";
 
-/**
- * Target-tyypit kertovat, mihin palautetta annetaan.
- * - listing = kurssi / palvelu / listaus
- * - user = kurssin vetäjä / käyttäjä
- *
- * Näin sama lomake voidaan käyttää kahteen eri tarkoitukseen.
- */
+// tää tiedosto on “yksi lomake kahteen tarkoitukseen”
+// eli sama feedback-formi toimii
+// - kurssille/listaukselle (listing)
+// - käyttäjälle/kurssin vetäjälle (user)
+
+// "target" kertoo, mihin palaute kohdistuu
 type ListingTarget = {
-  kind: "listing";
+  kind: "listing"; // erotetaan userista tällä kentällä
   listingId: string;
-  listingName: string;
+  listingName: string; // tätä voi käyttää otsikossa tai muussa UI:ssa
 };
 
 type UserTarget = {
@@ -24,62 +23,43 @@ type UserTarget = {
 };
 
 type Props = {
-  // target voi olla jompikumpi: kurssi tai käyttäjä
+  // annetaan aina target, jotta komponentti tietää mihin se lähettää datan
   target: ListingTarget | UserTarget;
 
-  // vapaaehtoinen callback, jota vanhempi komponentti voi käyttää esim.
-  // sulkeakseen modaalin tai päivittääkseen listan onnistuneen lähetyksen jälkeen
-  onSubmitted?: () => void;
+  onSubmitted?: () => void; 
 };
 
-/**
- * FeedbackForm on yhteinen palautelomake sekä kurssille että kurssin vetäjälle.
- * Tämä komponentti:
- * - näyttää tähdet + kommenttikentän
- * - validoi syötteen (1–5 tähteä)
- * - vaatii kirjautumisen (token)
- * - lähettää datan backendille (kahdella eri API-kutsulla targetin mukaan)
- */
 export default function FeedbackForm({ target, onSubmitted }: Props) {
-  // t(key) hakee oikean kielisen tekstin UI:hin
   const { t } = useI18n();
 
-  // token kertoo onko käyttäjä kirjautunut (ja sillä todennäköisesti todistetaan backendille käyttäjä)
   const { token } = useAuth();
 
-  // Lomakkeen kenttien tilat (React state)
-  // HUOM: stars on string, koska <select> antaa arvot merkkijonona
+  // lomakkeen kentät:
+  // stars pidetään stringinä koska select antaa stringin, mutta muutetaan numeroiksi submitissä
   const [stars, setStars] = useState<string>("");
   const [comment, setComment] = useState<string>("");
 
-  // UI-tilat: lähetys käynnissä, virheviesti, onnistumisen merkki
+  // ui-tila: lähetetäänkö nyt, tuliko virhe, ja näytetäänkö “kiitos”
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
-  /**
-   * Lomakkeen submit-handler:
-   * - estää selaimen oletus-submitin (ei sivun refreshia)
-   * - validoi tähdet
-   * - tarkistaa että käyttäjä on kirjautunut
-   * - lähettää tiedot backendille
-   * - näyttää onnistumisen tai virheen
-   */
+  // lähetä lomake backendille
   const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault(); // estää perinteisen lomakkeen lähetyksen
-    setError(null);     // nollaa vanhat virheet
-    setDone(false);     // nollaa "kiitos" -teksti ennen uutta lähetystä
+    e.preventDefault(); // estää sivun reloadin
+    setError(null); // pyyhitään vanha virhe
+    setDone(false); // jos aiemmin onnistui, nollataan “kiitos” ennen uutta yritystä
 
-    // Muutetaan stars-merkkijono numeroksi
+    // muutetaan tähdet numeroksi
     const n = Number(stars);
 
-    // Perusvalidointi: täytyy olla 1–5 ja oikea numero
+    // varmistetaan että n on oikea numero 1–5
     if (!Number.isFinite(n) || n < 1 || n > 5) {
       setError(t("feedback.errorStars"));
       return;
     }
 
-    // Jos ei tokenia, käyttäjä ei ole kirjautunut → ei lähetetä
+    // jos ei tokenia, ei lähetetä mitään backendille
     if (!token) {
       setError(t("feedback.errorLoginRequired"));
       return;
@@ -87,53 +67,53 @@ export default function FeedbackForm({ target, onSubmitted }: Props) {
 
     setSubmitting(true);
     try {
-      // Valitaan API-kutsu sen mukaan, annetaanko palaute kurssille vai käyttäjälle
+      // päätetään minne lähetetään:
+      // - listing -> postListingRating
+      // - user -> postUserRating
+      //
+      // kommentti trimmataan: jos käyttäjä jättää tyhjäksi, lähetetään undefined
+      const feedback = comment.trim() || undefined;
+
       if (target.kind === "listing") {
-        // Lähetetään kurssiarvio
+        // kurssin/listauksen arvio
         await postListingRating(target.listingId, {
           stars: n,
-          // trim() poistaa alusta/lopusta välilyönnit; jos tyhjä, lähetetään undefined (ei tyhjää stringiä)
-          feedback: comment.trim() || undefined,
+          feedback,
           public: true,
         });
       } else {
-        // Lähetetään käyttäjäarvio
+        // käyttäjän arvio (esim. kurssin vetäjä)
         await postUserRating(target.userId, {
           stars: n,
-          feedback: comment.trim() || undefined,
+          feedback,
           public: true,
         });
       }
 
-      // Onnistui: näytetään "kiitos" ja tyhjennetään kentät
+      // onnistui, näytetään kiitos
       setDone(true);
       setStars("");
       setComment("");
 
-      // Jos vanhempi antoi callbackin, kutsutaan se
-      if (onSubmitted) onSubmitted();
+      // ilmoitetaan vanhemmalle komponentille eli sille joka käyttää FeedbackFormia
+      onSubmitted?.();
     } catch (e: unknown) {
-      // Muutetaan mahdollinen axios/backend-error käyttäjälle luettavaan muotoon
-      setError(toMessage(e));
+      setError(toMessage(e)); 
     } finally {
-      // Varmistetaan että "lähetys käynnissä" loppuu aina
-      setSubmitting(false);
+      setSubmitting(false); 
     }
   };
 
+  // ----- UI -----
+
   return (
-    // Lomake: Enter tai submit-nappi ajaa onSubmitin
     <form onSubmit={onSubmit} className="space-y-2">
-      {/* Otsikko poistettu, koska ympäröivä näkymä/modaali näyttää sen jo */}
+      {/* jos ei olla kirjautuneena, näytetään pieni vihje */}
+      {!token && <div className="text-xs text-neutral-500">{t("feedback.loginHint")}</div>}
 
-      {/* Jos käyttäjä ei ole kirjautunut, näytetään pieni vihje */}
-      {!token && (
-        <div className="text-xs text-neutral-500">{t("feedback.loginHint")}</div>
-      )}
-
-      {/* Kentät: md+ näytöillä grid jakaa 3 sarakkeeseen, pienillä allekkain */}
+      {/* kentät: tähtivalinta + kommentti */}
       <div className="grid md:grid-cols-3 gap-2 text-sm">
-        {/* Tähdet (select) */}
+        {/* tähdet */}
         <label className="flex flex-col gap-1">
           <span>{t("feedback.ratingLabel")}</span>
           <select
@@ -141,10 +121,7 @@ export default function FeedbackForm({ target, onSubmitted }: Props) {
             value={stars}
             onChange={(e) => setStars(e.target.value)}
           >
-            {/* Tyhjä valinta = ei valittu */}
             <option value="">-</option>
-
-            {/* Vaihtoehdot 1–5 */}
             {[1, 2, 3, 4, 5].map((n) => (
               <option key={n} value={n}>
                 {n}
@@ -153,7 +130,7 @@ export default function FeedbackForm({ target, onSubmitted }: Props) {
           </select>
         </label>
 
-        {/* Kommentti (textarea), ottaa 2 saraketta md+ koossa */}
+        {/* kommentti */}
         <div className="md:col-span-2">
           <label className="flex flex-col gap-1">
             <span>{t("feedback.commentLabel")}</span>
@@ -167,25 +144,21 @@ export default function FeedbackForm({ target, onSubmitted }: Props) {
         </div>
       </div>
 
-      {/* Virheviesti, jos sellainen on */}
+      {/* virhe näkyy jos submit ei onnistunut */}
       {error && <div className="text-xs text-red-600">{error}</div>}
 
-      {/* Lähetysnappi + onnistumisteksti */}
+      {/* lähetysnappi + onnistumisviesti */}
       <div className="flex items-center gap-2">
         <button
           type="submit"
-          // Disabloidaan jos lähetys käynnissä tai käyttäjä ei ole kirjautunut
-          disabled={submitting || !token}
+          disabled={submitting || !token} // ei lähetetä jos jo menossa tai ei kirjautunut
           className="rounded-xl px-3 py-1.5 border bg-black text-white text-sm disabled:opacity-50"
         >
-          {/* Nappi vaihtaa tekstin lähetyksen aikana */}
           {submitting ? t("feedback.sending") : t("feedback.submit")}
         </button>
 
-        {/* Onnistumismerkki */}
-        {done && (
-          <span className="text-xs text-emerald-600">{t("feedback.thanks")}</span>
-        )}
+        {/* “kiitos” näkyy vasta kun lähetys onnistui */}
+        {done && <span className="text-xs text-emerald-600">{t("feedback.thanks")}</span>}
       </div>
     </form>
   );

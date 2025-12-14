@@ -1,34 +1,34 @@
-// ServicesList.tsx
-// Listaussivu: hakee kaikki palvelut/kurssit backendistä ja antaa käyttäjälle
-// paljon “frontend-suodattimia” (haku, kategoriat, tyyppi, etä/lähi, aikaväli, hinta,
-// sekä teemaan perustuvat facetit). Klikistä avautuu detail-modal.
 
-import { useEffect, useMemo, useState } from "react"; // React hookit: datahaku, tila, johdetut arvot
-import { listServices } from "../features/services/api.services"; // API: hae palvelulista backendistä
-import type { ListedService } from "../types"; // TS-tyyppi yksittäiselle listaukselle
-import ServiceCard from "../features/services/ServiceCard"; // UI-komponentti yhden palvelun kortille
-import Modal from "../ui/Modal"; // yleinen modal-komponentti (lisäsuodattimet)
-import { Link } from "react-router-dom"; // reitityslinkit
-import { toMessage } from "../lib/error"; // virheen muunto luettavaksi
-import { useI18n } from "../i18n"; // käännökset + kieli
-import ServiceDetailModal from "../features/services/ServiceDetailModal"; // modal, joka näyttää yhden palvelun tarkemmin
+// haetaan kaikki listaukset backendistä kerran (listServices)
+// pidetään filttereiden arvot stateissa (q, category, type, maxPrice…)
+// lasketaan suodatettu lista frontissa (locallyFiltered)
+// näytetään tulokset ServiceCardeina
+// kun korttia klikataan, avataan ServiceDetailModal (ei tarvi navigoida pois)
 
-// ------------------------------------------------------------
-// APUTOIMINNOT (käytetään filttereissä)
-// ------------------------------------------------------------
+import { useEffect, useMemo, useState } from "react"; 
+import { listServices } from "../features/services/api.services"; 
+import type { ListedService } from "../types"; 
+import ServiceCard from "../features/services/ServiceCard";
+import Modal from "../ui/Modal"; 
+import { Link } from "react-router-dom"; 
+import { toMessage } from "../lib/error"; 
+import { useI18n } from "../i18n"; 
+import ServiceDetailModal from "../features/services/ServiceDetailModal";
 
-/** Tulkitaan "online" jos location on http/https-URL */
+
+// jos location näyttää urlilta, tulkitaan se etäkurssiksi
 function isOnline(location: string | null | undefined) {
   if (!location) return false;
   try {
     const u = new URL(location);
     return u.protocol === "http:" || u.protocol === "https:";
   } catch {
+    // jos url-parsaus failaa, oletetaan että se on fyysinen osoite (eli lähikurssi)
     return false;
   }
 }
 
-/** Parsii hinnan euroiksi tekstistä, esim. "€29", "29,90", "29.90" -> 29.9 */
+// yritetään tehdä hinnasta numero (eurot) vaikka se olis stringissä “€29” tai “29,90”
 function parsePriceEUR(p: string | null | undefined): number | null {
   if (!p) return null;
   const num = p.replace(/[^\d,.]/g, "").replace(",", ".");
@@ -36,8 +36,7 @@ function parsePriceEUR(p: string | null | undefined): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-// Kesto-bucketit on valmiina, mutta kestoa ei vielä ole datassa.
-// Eli tätä ei oikeasti käytetä filttereissä (placeholder).
+// kesto-filtteri on valmiina UI:hin, vaikka oikeaa “kesto”-kenttää ei vielä ole datassa
 const DURATION_BUCKETS = [
   { key: "le60", label: "≤ 60 min", match: (m: number) => m <= 60 },
   { key: "1to3h", label: "1–3 h", match: (m: number) => m > 60 && m <= 180 },
@@ -45,8 +44,8 @@ const DURATION_BUCKETS = [
   { key: "multiday", label: "> 8 h / useampi päivä", match: (m: number) => m > 480 },
 ] as const;
 
-// “Facet”-suodattimet: nämä ovat UI:ssa valmiina listoja,
-// ja deriveFacets yrittää päätellä facetit tekstistä (heuristiikka).
+// facetit = “valmiit checkbox-listat” (teemat/keittiötyyli/ruokavalio/ryhmäkoko)
+// ei tule backendistä, vaan johdetaan avainsanoista
 const FACETS = {
   crafts: {
     label: "Kurssin teema",
@@ -87,14 +86,13 @@ const FACETS = {
   },
 } as const;
 
+
 type ModeFilter = "all" | "online" | "inperson";
 
-/**
- * deriveFacets: tekee “teko-facetit” etsimällä avainsanoja tekstistä.
- * Tämä ei tule backendistä, vaan on frontin heuristiikka.
- */
+// “teko-facetit” eli päätellään avainsanoista, mihin ryhmiin kurssi sopii
+// vaan heuristiikka: voi mennä joskus ohi, mutta toimii demossa
 function deriveFacets(s: ListedService) {
-  // kerätään relevantit tekstikentät yhteen “hakutekstiksi”
+  // yhdistetään useat kentät yhdeksi isoksi tekstiksi
   const txt = [
     s.name,
     s.description,
@@ -109,7 +107,7 @@ function deriveFacets(s: ListedService) {
 
   const hasAny = (words: string[]) => words.some((w) => txt.includes(w));
 
-  // Teema
+  // teema
   const theme: string[] = [];
   if (hasAny(["arki", "helppo", "nopea", "meal prep"])) theme.push("Arjen kokkaus");
   if (hasAny(["leivo", "leivon", "leivonta", "bake", "baking"])) theme.push("Leivonta");
@@ -117,20 +115,18 @@ function deriveFacets(s: ListedService) {
   if (hasAny(["kasvis", "vege", "vegetarian"])) theme.push("Kasvisruoka");
   if (hasAny(["italia", "aasia", "thai", "mexico", "indian", "world"]))
     theme.push("Maailman keittiöt");
-  if (hasAny(["jälkiruoka", "dessert", "makea", "sweet"]))
-    theme.push("Jälkiruoat");
+  if (hasAny(["jälkiruoka", "dessert", "makea", "sweet"])) theme.push("Jälkiruoat");
 
-  // Keittiötyyli
+  // keittiötyyli
   const cuisine: string[] = [];
   if (hasAny(["suomi", "lapp", "karjal"])) cuisine.push("Suomalainen");
   if (hasAny(["italia", "pasta", "pizza"])) cuisine.push("Italialainen");
-  if (hasAny(["aasia", "thai", "ramen", "korea", "sushi"]))
-    cuisine.push("Aasialainen");
+  if (hasAny(["aasia", "thai", "ramen", "korea", "sushi"])) cuisine.push("Aasialainen");
   if (hasAny(["välimer", "mediterr"])) cuisine.push("Välimerellinen");
   if (hasAny(["street", "burger", "taco"])) cuisine.push("Street food");
   if (hasAny(["fine dining", "fine-dining", "degust"])) cuisine.push("Fine dining");
 
-  // Ruokavalio
+  // ruokavalio
   const diet: string[] = [];
   if (hasAny(["vegaan", "vegan"])) diet.push("Vegaani");
   if (hasAny(["kasvis", "vegetarian"])) diet.push("Kasvis");
@@ -139,97 +135,95 @@ function deriveFacets(s: ListedService) {
   if (hasAny(["maitoproteiini", "dairy free"])) diet.push("Maitoproteiiniton");
   if (hasAny(["sokeriton", "sugar free"])) diet.push("Sokeriton");
 
-  // Palautetaan muodossa, jota filtteröinti käyttää
   return { craft: theme, code: cuisine, instrument: diet };
 }
 
-/**
- * Ryhmäkokoluokka attendee_limit-kentästä.
- * - "unlimited" => suuri ryhmä
- * - 1 => yksityistunti
- * - 2–10 => pieni ryhmä
- * - 11+ => suuri ryhmä
- */
+// ryhmäkoko-facetin arvo listauksesta
 function groupLabel(
   attendee_limit: string | null | undefined
 ): "Yksityistunti" | "Pieni ryhmä" | "Suuri ryhmä" {
   const limitStr = (attendee_limit ?? "").toLowerCase();
   if (limitStr === "unlimited") return "Suuri ryhmä";
+
   const n = Number(limitStr);
-  if (!Number.isFinite(n)) return "Pieni ryhmä"; // jos arvo ei ole numero, oletetaan pieni ryhmä
+  if (!Number.isFinite(n)) return "Pieni ryhmä"; // default
   if (n <= 1) return "Yksityistunti";
   if (n <= 10) return "Pieni ryhmä";
   return "Suuri ryhmä";
 }
 
 export default function ServicesList() {
-  // items: null = ei vielä ladattu, [] = ladattu mutta tyhjä
+  // data backendistä:
+  // null = ei ladattu vielä (näytetään “loading…”)
+  // [] = ladattu mutta ei tuloksia
   const [items, setItems] = useState<ListedService[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Perusfiltterit
+  // perusfiltterit (näkyy heti hero-alueella)
   const [q, setQ] = useState(""); // hakuteksti
-  const [category, setCategory] = useState<string>("all"); // kategoria
-  const [type, setType] = useState<string>("all"); // tyyppi
+  const [category, setCategory] = useState<string>("all"); // valittu kategoria
+  const [type, setType] = useState<string>("all"); // valittu tyyppi
 
-  // Lisäfiltterit
-  const [mode, setMode] = useState<ModeFilter>("all"); // online/inperson
-  const [dateFrom, setDateFrom] = useState<string>(""); // YYYY-MM-DD
-  const [dateTo, setDateTo] = useState<string>(""); // YYYY-MM-DD
-  const [maxPrice, setMaxPrice] = useState<string>(""); // numero tekstinä inputista
+  // lisäfiltterit (modaalissa)
+  const [mode, setMode] = useState<ModeFilter>("all");
+  const [dateFrom, setDateFrom] = useState<string>("");
+  const [dateTo, setDateTo] = useState<string>("");
+  const [maxPrice, setMaxPrice] = useState<string>("");
 
-  // Facet-valinnat (checkbox-listat)
+  // facet-checkboxit (modaalissa)
   const [fDuration, setFDuration] = useState<string[]>([]);
   const [fGroupSize, setFGroupSize] = useState<string[]>([]);
   const [fCrafts, setFCrafts] = useState<string[]>([]);
   const [fCode, setFCode] = useState<string[]>([]);
   const [fInstr, setFInstr] = useState<string[]>([]);
 
-  // UI-tilat: lisäsuodatinmodal + detail-modal
+  // ui-tilat:
+  // filtersOpen: aukeeko “lisäsuodattimet”-modal
+  // detail: valittu palvelu detail-modaaliin
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [detail, setDetail] = useState<ListedService | null>(null);
 
-  // i18n ja locale päivämääräformaatteihin
+  // käännökset + locale
   const { t, lang } = useI18n();
   const locale = lang === "fi" ? "fi-FI" : "en-GB";
 
-  // ------------------------------------------------------------
-  // Datahaku backendistä
-  // ------------------------------------------------------------
+  // haetaan data backendistä
   async function load() {
     setError(null);
     try {
-      const data = await listServices({}); // API: hae kaikki palvelut (tyhjä query tässä)
+      // haetaan kaikki listaukset backendistä
+      // tyhjät parametrit = hae kaikki
+      const data = await listServices({});
       setItems(data);
     } catch (e: unknown) {
+      // jos tulee virhe, näytetään se käyttäjälle luettavana tekstinä
       setError(toMessage(e));
+
+        
     }
   }
 
-  // Ladataan kerran sivun mountissa
+  // kun sivu latautuu
   useEffect(() => {
     void load();
   }, []);
 
-  // ------------------------------------------------------------
-  // Dropdowneihin dynaamiset arvot datasta
-  // ------------------------------------------------------------
 
-  // categories: uniikit kategoriat listauksista
+  // tehdään lista uniikeista kategorioista (pill buttonit)
   const categories = useMemo(() => {
     const set = new Set<string>();
     (items ?? []).forEach((s) => s.service_category && set.add(s.service_category));
     return Array.from(set);
   }, [items]);
 
-  // types: uniikit service_typet listauksista
+  // tehdään lista uniikeista tyypeistä (select dropdown)
   const types = useMemo(() => {
     const set = new Set<string>();
     (items ?? []).forEach((s) => s.service_type && set.add(s.service_type));
     return Array.from(set);
   }, [items]);
 
-  // Tämä lasketaan “badgea” varten: montako lisäsuodatinta on päällä
+  // badge: montako lisäfiltteriä on päällä (näkyy “Lisää filttereitä” -napissa)
   const totalExtraSelected =
     fDuration.length +
     fGroupSize.length +
@@ -241,30 +235,27 @@ export default function ServicesList() {
     (dateTo ? 1 : 0) +
     (maxPrice ? 1 : 0);
 
-  // Yleinen checkbox-toggle: lisää/poista arvo listasta
+  // yleinen checkbox-toggle: lisää arvo listaan tai poista se
   function toggle(list: string[], setter: (v: string[]) => void, value: string) {
     setter(list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
   }
 
-  // ------------------------------------------------------------
-  // Frontend-filtteröinti (ei tehdä backend queryllä)
-  // ------------------------------------------------------------
-  const locallyFiltered = useMemo(() => {
+  
+  const locallyFiltered = useMemo(() => {// suodatettu lista frontissa
     if (!items) return null;
 
-    // Esikäsittely: jotta filter ei tee samaa työtä joka itemille
-    const qLower = q.trim().toLowerCase();
+    const qLower = q.trim().toLowerCase(); // haku pienillä kirjaimilla
 
-    // Päivämäärärajojen timestampit
+    // date inputit -> timestamp rajat
     const fromTs = dateFrom ? new Date(dateFrom + "T00:00:00Z").getTime() : null;
     const toTs = dateTo ? new Date(dateTo + "T23:59:59Z").getTime() : null;
 
-    // Maxhinta numeroksi (tai null jos tyhjä)
+    // max price input -> numero (tai null jos tyhjä)
     const maxPriceNum = maxPrice ? Number(maxPrice) : null;
 
-    // Varsinainen suodatus
+      // suodatuslogiikka
     return items.filter((s) => {
-      // 1) Tekstihaku: etsitään yhdistetystä tekstistä
+      // 1) tekstihaku
       if (qLower) {
         const hay = [
           s.name,
@@ -281,7 +272,7 @@ export default function ServicesList() {
         if (!hay.includes(qLower)) return false;
       }
 
-      // 2) Kategoriafiltteri
+      // 2) kategoria
       if (
         category !== "all" &&
         (s.service_category ?? "").toLowerCase() !== category.toLowerCase()
@@ -289,19 +280,17 @@ export default function ServicesList() {
         return false;
       }
 
-      // 3) Tyyppifiltteri
-      if (
-        type !== "all" &&
-        (s.service_type ?? "").toLowerCase() !== type.toLowerCase()
-      ) {
+      // 3) tyyppi
+      if (type !== "all" && (s.service_type ?? "").toLowerCase() !== type.toLowerCase()) {
         return false;
       }
 
-      // 4) Online/lähi-filtteri
+      // 4) etä/lähi
       const m: ModeFilter = isOnline(s.location) ? "online" : "inperson";
       if (mode !== "all" && m !== mode) return false;
 
-      // 5) Päivämääräväli: jos rajat käytössä, listauksella pitää olla datetime
+      // 5) päivämääräväli
+      // jos käyttäjä käyttää aikarajaa, listauksella pitää olla datetime
       if (fromTs || toTs) {
         if (!s.datetime) return false;
         const ts = new Date(s.datetime).getTime();
@@ -309,23 +298,24 @@ export default function ServicesList() {
         if (toTs && ts > toTs) return false;
       }
 
-      // 6) Hinta: jos maxPrice annettu, parsitaan euroiksi ja verrataan
+      // 6) hinta (max)
       if (maxPriceNum !== null) {
         const p = parsePriceEUR(s.price);
-        // Huom: jos hintaa ei saada parsittua (p === null), sitä ei suljeta pois
+        // jos hinta parsitaan onnistuneesti, verrataan
+        // jos ei parsita (null), ei suljeta pois (voi olla “Free” tms)
         if (p !== null && p > maxPriceNum) return false;
       }
 
-      // 7) Ryhmäkoko facet
+      // 7) ryhmäkoko facet
       const g = groupLabel(s.attendee_limit);
       if (fGroupSize.length && !fGroupSize.includes(g)) return false;
 
-      // 8) Kesto facet: placeholder (datassa ei ole kestoa)
+      // 8) kesto facet (ei vielä dataa)
       if (fDuration.length) {
-        // kestoa ei vielä datassa – placeholder
+        // oletetaan että kaikki on ≤ 60 min (demo) 
       }
 
-      // 9) Tekstistä johdetut facetit (teema/keittiö/ruokavalio)
+      // 9) tekstistä johdetut facetit
       const facets = deriveFacets(s);
       const matchesFacet = (selected: string[], values: string[]) =>
         !selected.length || selected.some((x) => values.includes(x));
@@ -352,23 +342,22 @@ export default function ServicesList() {
     fInstr,
   ]);
 
-  // ------------------------------------------------------------
-  // UI
-  // ------------------------------------------------------------
+
+  
+  // ----- UI -----
+
   return (
     <main className="min-h-screen bg-white/90">
-      {/* Hero: hakukenttä + pikasuodattimet + teaser */}
+      {/* hero-alue: otsikko + hakukenttä + nopea filtteröinti */}
       <section className="page-shell py-8 md:py-14">
         <div className="grid md:grid-cols-2 gap-8 items-center">
           <div>
             <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight leading-tight">
               {t("services.heroTitle")}
             </h1>
-            <p className="mt-3 text-neutral-600 max-w-prose">
-              {t("services.heroSubtitle")}
-            </p>
+            <p className="mt-3 text-neutral-600 max-w-prose">{t("services.heroSubtitle")}</p>
 
-            {/* Hakukenttä + nopea suodatus UI */}
+            {/* tässä muutetaan filtteri-statea -> locallyFiltered päivittyy automaattisesti */}
             <div className="mt-6 grid gap-3">
               <div className="flex gap-2">
                 <input
@@ -379,25 +368,22 @@ export default function ServicesList() {
                 />
               </div>
 
-              {/* Kategoria-pill buttonit */}
+              {/* kategoriapillit */}
               <div className="flex flex-wrap gap-2">
                 <button
                   className={`rounded-full px-3 py-1 text-sm border transition ${
-                    category === "all"
-                      ? "bg-black text-white border-black"
-                      : "hover:bg-black/5"
+                    category === "all" ? "bg-black text-white border-black" : "hover:bg-black/5"
                   }`}
                   onClick={() => setCategory("all")}
                 >
                   Kaikki kategoriat
                 </button>
+
                 {categories.map((c) => (
                   <button
                     key={c}
                     className={`rounded-full px-3 py-1 text-sm border transition ${
-                      category === c
-                        ? "bg-black text-white border-black"
-                        : "hover:bg-black/5"
+                      category === c ? "bg-black text-white border-black" : "hover:bg-black/5"
                     }`}
                     onClick={() => setCategory(c)}
                   >
@@ -406,7 +392,7 @@ export default function ServicesList() {
                 ))}
               </div>
 
-              {/* Dropdownit + lisäsuodattimet */}
+              {/* dropdownit + lisäsuodattimet */}
               <div className="flex flex-wrap items-center gap-2">
                 <select
                   className="rounded-xl border px-3 py-2 text-sm"
@@ -431,13 +417,9 @@ export default function ServicesList() {
                   <option value="inperson">Lähikurssi</option>
                 </select>
 
-                {/* Avaa lisäsuodatinmodaalin */}
-                <button
-                  className="rounded-xl px-3 py-1.5 border"
-                  onClick={() => setFiltersOpen(true)}
-                >
+                {/* avaa modaalin (lisäsuodattimet) */}
+                <button className="rounded-xl px-3 py-1.5 border" onClick={() => setFiltersOpen(true)}>
                   Lisää filttereitä{" "}
-                  {/* Badge näyttää montako lisäfiltteriä on käytössä */}
                   {totalExtraSelected ? (
                     <span className="ml-1 inline-flex items-center justify-center text-xs rounded-full border px-1.5">
                       {totalExtraSelected}
@@ -445,7 +427,7 @@ export default function ServicesList() {
                   ) : null}
                 </button>
 
-                {/* Resetoi kaikki filtterit */}
+                {/* tyhjentää kaikki filtteri-stateit */}
                 <button
                   className="text-sm underline opacity-80"
                   onClick={() => {
@@ -469,7 +451,7 @@ export default function ServicesList() {
             </div>
           </div>
 
-          {/* Teaser grid: näyttää 4 ekaa filttereiden mukaista listaa “esikatseluna” */}
+          {/* teaser-grid: näyttää 4 ekaa tulosta “pikana” */}
           <div className="relative">
             <div className="rounded-3xl border bg-white p-4 shadow-sm">
               <div className="grid grid-cols-2 gap-3">
@@ -480,7 +462,7 @@ export default function ServicesList() {
                       alt=""
                       className="h-28 w-full object-cover"
                       onError={(e) => {
-                        // jos kuva ei lataudu, käytetään placeholderia
+                        // jos kuva failaa, käytetään placeholderia
                         e.currentTarget.src = "https://placehold.co/800x450?text=Kuva";
                       }}
                     />
@@ -490,18 +472,14 @@ export default function ServicesList() {
                           ? new Date(s.datetime).toLocaleDateString(locale)
                           : t("course.timeTBA")}
                       </div>
-                      <div className="text-sm font-semibold line-clamp-2">
-                        {s.name}
-                      </div>
+                      <div className="text-sm font-semibold line-clamp-2">{s.name}</div>
                     </div>
                   </div>
                 ))}
 
-                {/* Jos ei tuloksia, näytetään fallback-teksti */}
+                {/* jos suodatuksen jälkeen ei ole mitään */}
                 {(!locallyFiltered || locallyFiltered.length === 0) && (
-                  <div className="text-sm text-neutral-500 p-2">
-                    {t("services.noPreview")}
-                  </div>
+                  <div className="text-sm text-neutral-500 p-2">{t("services.noPreview")}</div>
                 )}
               </div>
             </div>
@@ -509,33 +487,28 @@ export default function ServicesList() {
         </div>
       </section>
 
-      {/* Tulokset */}
+      {/* tuloslista */}
       <section className="page-shell pb-16">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl md:text-2xl font-bold">
             {t("services.resultsTitle")} ({locallyFiltered ? locallyFiltered.length : 0})
           </h2>
 
-          {/* Luo uusi listaus */}
-          <Link
-            to="/new"
-            className="rounded-xl px-3 py-1.5 border bg-black text-white"
-          >
+          {/* vie ServiceEdit-sivulle uutta listausta varten */}
+          <Link to="/new" className="rounded-xl px-3 py-1.5 border bg-black text-white">
             {t("button.newListing")}
           </Link>
         </div>
 
-        {/* Virheet + lataus */}
+        {/* virhe ja loading */}
         {error && (
-          <div className="mb-4 rounded-xl border bg-red-50 text-red-600 p-3">
-            {error}
-          </div>
+          <div className="mb-4 rounded-xl border bg-red-50 text-red-600 p-3">{error}</div>
         )}
         {!items && <div>{t("services.loading")}</div>}
 
-        {/* ServiceCard-listaus.
-           onOpen={setDetail} tarkoittaa: kun kortti haluaa avata detailin,
-           se antaa palvelun tähän stateen -> detail-modal renderöityy. */}
+        {/* kortit:
+            huom: ServiceCard saa propin nimellä s
+            ja onOpen = setDetail -> se avaa detail-modalin kun kortti pyytää */}
         <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-6">
           {locallyFiltered?.map((s) => (
             <ServiceCard key={s.id} s={s} onOpen={setDetail} />
@@ -543,16 +516,12 @@ export default function ServicesList() {
         </div>
       </section>
 
-      {/* Lisäsuodattimet: oma Modal, jossa checkboxit + date/hinta */}
-      <Modal
-        open={filtersOpen}
-        onClose={() => setFiltersOpen(false)}
-        title="Lisäsuodattimet"
-      >
-        {/* Tämä modaalin sisältö on pelkkä UI joka säätää statea.
-           Varsinainen filtteröinti tapahtuu locallyFiltered useMemo:ssa. */}
+      {/* lisäsuodatinmodal:
+          tässä ei filtteröidä mitään suoraan, vaan muutetaan statea.
+          locallyFiltered tekee varsinaisen suodatuksen. */}
+      <Modal open={filtersOpen} onClose={() => setFiltersOpen(false)} title="Lisäsuodattimet">
         <div className="grid md:grid-cols-3 gap-4">
-          {/* Päivämäärä */}
+          {/* päivämäärät */}
           <div className="border rounded-xl p-3">
             <div className="font-semibold text-sm mb-2">Päivämääräväli</div>
             <div className="space-y-2">
@@ -577,7 +546,7 @@ export default function ServicesList() {
             </div>
           </div>
 
-          {/* Hinta */}
+          {/* hinta */}
           <div className="border rounded-xl p-3">
             <div className="font-semibold text-sm mb-2">Maksimihinta (€)</div>
             <input
@@ -589,11 +558,11 @@ export default function ServicesList() {
               onChange={(e) => setMaxPrice(e.target.value)}
             />
             <div className="mt-2 text-xs text-neutral-500">
-              Huom: hinnat parsitaan tekstistä (esim. "€29").
+              huom: hinnat parsitaan tekstistä (esim. "€29").
             </div>
           </div>
 
-          {/* Tila */}
+          {/* tila */}
           <div className="border rounded-xl p-3">
             <div className="font-semibold text-sm mb-2">Tila</div>
             <select
@@ -607,11 +576,9 @@ export default function ServicesList() {
             </select>
           </div>
 
-          {/* Ryhmäkoko */}
+          {/* ryhmäkoko */}
           <div className="border rounded-xl p-3">
-            <div className="font-semibold text-sm mb-2">
-              {FACETS.groupSize.label}
-            </div>
+            <div className="font-semibold text-sm mb-2">{FACETS.groupSize.label}</div>
             <div className="space-y-2">
               {FACETS.groupSize.values.map((g) => (
                 <label key={g} className="flex items-center gap-2 text-sm">
@@ -627,7 +594,7 @@ export default function ServicesList() {
             </div>
           </div>
 
-          {/* Kesto */}
+          {/* kesto (placeholder) */}
           <div className="border rounded-xl p-3">
             <div className="font-semibold text-sm mb-2">Kesto</div>
             <div className="space-y-2">
@@ -644,15 +611,13 @@ export default function ServicesList() {
               ))}
             </div>
             <div className="mt-2 text-xs text-neutral-500">
-              Huom: kestoa ei vielä ole datassa – tämä on valmiina tulevaa varten.
+              huom: kestoa ei vielä ole datassa – tämä on valmiina tulevaa varten.
             </div>
           </div>
 
-          {/* Kurssin teema */}
+          {/* kurssin teema */}
           <div className="border rounded-xl p-3">
-            <div className="font-semibold text-sm mb-2">
-              {FACETS.crafts.label}
-            </div>
+            <div className="font-semibold text-sm mb-2">{FACETS.crafts.label}</div>
             <div className="grid grid-cols-2 gap-2">
               {FACETS.crafts.values.map((v) => (
                 <label key={v} className="flex items-center gap-2 text-sm">
@@ -668,11 +633,9 @@ export default function ServicesList() {
             </div>
           </div>
 
-          {/* Keittiötyyli */}
+          {/* keittiötyyli */}
           <div className="border rounded-xl p-3">
-            <div className="font-semibold text-sm mb-2">
-              {FACETS.code.label}
-            </div>
+            <div className="font-semibold text-sm mb-2">{FACETS.code.label}</div>
             <div className="grid grid-cols-2 gap-2">
               {FACETS.code.values.map((v) => (
                 <label key={v} className="flex items-center gap-2 text-sm">
@@ -688,11 +651,9 @@ export default function ServicesList() {
             </div>
           </div>
 
-          {/* Ruokavalio */}
+          {/* ruokavalio */}
           <div className="border rounded-xl p-3">
-            <div className="font-semibold text-sm mb-2">
-              {FACETS.instruments.label}
-            </div>
+            <div className="font-semibold text-sm mb-2">{FACETS.instruments.label}</div>
             <div className="grid grid-cols-2 gap-2">
               {FACETS.instruments.values.map((v) => (
                 <label key={v} className="flex items-center gap-2 text-sm">
@@ -709,7 +670,7 @@ export default function ServicesList() {
           </div>
         </div>
 
-        {/* Modalin alaosa: reset + close */}
+        {/* modaalin alaosa: reset + sulje */}
         <div className="mt-4 flex items-center justify-end gap-2">
           <button
             className="rounded-xl px-3 py-1.5 border"
@@ -736,13 +697,8 @@ export default function ServicesList() {
         </div>
       </Modal>
 
-      {/* Detail-modal: renderöidään vain kun detail != null */}
-      {detail && (
-        <ServiceDetailModal
-          service={detail}
-          onClose={() => setDetail(null)}
-        />
-      )}
+      {/* detail-modal aukeaa kun detail != null */}
+      {detail && <ServiceDetailModal service={detail} onClose={() => setDetail(null)} />}
     </main>
   );
 }
