@@ -4,7 +4,6 @@
 // + login/register/logout funktiot
 // use Auth() käyttävät komponentit voi käyttää täältä tilaa ja toimintoja
 
-// HUOM! Täällä ei ole profiilitietoja (firstname, surname, jne) hae ne profiilisivulla
 
 import { createContext, useState } from "react"; 
 import { api } from "./api"; 
